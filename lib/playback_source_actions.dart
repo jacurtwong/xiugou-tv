@@ -206,6 +206,37 @@ final sourceCandidatesProvider =
     StateNotifierProvider<SourceCandidatesController, SourceCandidatesState>(
         (ref) => SourceCandidatesController(ref));
 
+/// 起播即预取「其他来源」（用户 2026-11-19 口径：播放后后台自动搜，
+/// 等点开选集时结果已经在了，而不是打开弹窗才开始等）。
+///
+/// - 只在点播会话出现时触发；直播 / 没有站源 / 没有选集都跳过；
+/// - 起播后延迟 [sourceCandidatesPrefetchDelay] 再搜：用户连点几集时不至于白搜；
+/// - 去重交给 `ensure()`：同一集搜过（或正在搜）就直接返回。
+final sourceCandidatesPrefetchProvider = Provider<void>((ref) {
+  Timer? debounce;
+  ref.listen<PlaybackSession?>(activePlaybackSessionProvider,
+      (previous, next) {
+    debounce?.cancel();
+    final session = next;
+    if (session == null ||
+        session.site == null ||
+        session.episodes.isEmpty ||
+        session.index < 0 ||
+        session.index >= session.episodes.length) {
+      return;
+    }
+    final episodeKey =
+        '${session.site!.key}::${session.episodes[session.index].name}';
+    debounce = Timer(sourceCandidatesPrefetchDelay, () {
+      unawaited(ref.read(sourceCandidatesProvider.notifier).ensure(episodeKey));
+    });
+  });
+  ref.onDispose(() => debounce?.cancel());
+});
+
+/// 起播后等多久再预取：太短会在用户「连点几集」时做无用功，太长又来不及。
+const sourceCandidatesPrefetchDelay = Duration(seconds: 3);
+
 bool _sourceChangeBlocked(Ref ref) =>
     ref.read(playbackSourceChangeProvider) != null ||
     ref.read(playerRefreshBusyProvider) ||

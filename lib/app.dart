@@ -3427,6 +3427,8 @@ class XiugouTvApp extends ConsumerWidget {
     final prepareIntent = ref.watch(playbackIntentProvider);
     final activeSession = ref.watch(activePlaybackSessionProvider);
     ref.watch(episodeBrowseSourceIndexProvider);
+    // 起播即预取「其他来源」：打开选集时结果已经在了（用户 2026-11-19 口径）。
+    ref.watch(sourceCandidatesPrefetchProvider);
     // §43 弹幕：加载器 + 本次播放的开关覆盖
     final danmakuController = ref.watch(danmakuControllerProvider);
     final danmakuOverride = ref.watch(danmakuSessionOverrideProvider);
