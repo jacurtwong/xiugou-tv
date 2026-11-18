@@ -333,7 +333,7 @@ class SiteApi {
       final resolved = await parseEngine.parse(id, flag: flag, parses: parses);
       var url = resolved.url;
       var headers = resolved.headers ?? site?.header;
-      // 部分 CMS 站（西瓜 / 吉吉 / 非凡 / 电影天堂）给的 `vod_play_url` 是分享页
+      // 部分 CMS 站（分享页型，见 AGENTS 本地记录）给的 `vod_play_url` 是分享页
       // （`/share/…` `/play/…` `/watch/…`），真正的 m3u8 写在页面脚本里。
       // 这些站 needsParse 是 0，不会走解析引擎——本地抠一次，否则 mpv 只会报
       // `Failed to recognize file format.`。
