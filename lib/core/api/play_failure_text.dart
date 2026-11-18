@@ -1,4 +1,5 @@
 import 'dart:async';
+import '../app_info.dart';
 
 import '../companion/companion_process_manager.dart' show CompanionStatus;
 import '../companion/companion_spider_api.dart' show SpiderCallException;
@@ -44,7 +45,7 @@ String playResolveFailureText(Object? error, {bool allLines = false}) {
 String companionUnavailableText(String siteName, CompanionStatus status) {
   final name = siteName.trim().isEmpty ? '该站源' : '站源「${siteName.trim()}」';
   if (status == CompanionStatus.unsupported) {
-    return '$name需要内置的 Java 运行环境，但没有找到，请重新安装修狗TV 后再试';
+    return '$name需要内置的 Java 运行环境，但没有找到，请重新安装$appDisplayName 后再试';
   }
   return '$name的爬虫服务没有启动成功，请点「重试」；仍然失败可在「设置 → 关于 → 错误日志」查看原因';
 }

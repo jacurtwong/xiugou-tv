@@ -116,10 +116,73 @@ String sourceCandidatesShowKey(VodItem item, int episodeCount) {
   return '$name::$episodeCount';
 }
 
-/// 把候选映射到「当前这一集」：在候选的详情里按集名找同名集。
+/// 集名的「第几集」序号：同时支持 `第3集` / `03` / `EP03` / `3` / `第三集` / `S01E03`。
 ///
+/// 各站的写法太随意，靠字符串相等去映射同一集会大面积失败（用户在 1.9.0 反馈）。
+/// 规则：先去掉季集前缀与常见修饰词，再取**最后一个数字段**（`S01E03` → 3）；
+/// 中文数字只处理到「一百」级别，够覆盖「第三集」这类。
+int? episodeOrdinal(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+  // 去掉方括号/圆括号/分隔符与「集/话/期」等量词，保留数字与中文字数。
+  final cleaned = text
+      .replaceAll(RegExp(r'[\[\]【】()（）<>《》]'), ' ')
+      .replaceAll(RegExp(r'[集话話期]'), ' ');
+  final digits = RegExp(r'\d+').allMatches(cleaned).toList();
+  if (digits.isNotEmpty) {
+    // 取最后一组数字：S01E03 → 3，第10集 高清 → 10。
+    return int.tryParse(digits.last.group(0)!);
+  }
+  final chinese = _chineseOrdinal(cleaned);
+  return chinese;
+}
+
+const _chineseDigits = <String, int>{
+  '零': 0, '一': 1, '二': 2, '两': 2, '三': 3, '四': 4,
+  '五': 5, '六': 6, '七': 7, '八': 8, '九': 9,
+};
+
+int? _chineseOrdinal(String text) {
+  final match = RegExp(r'[零一二两三四五六七八九十百]+').allMatches(text).toList();
+  if (match.isEmpty) return null;
+  final value = match.last.group(0)!;
+  var total = 0;
+  var current = 0;
+  for (final char in value.split('')) {
+    if (char == '百') {
+      total += (current == 0 ? 1 : current) * 100;
+      current = 0;
+    } else if (char == '十') {
+      total += (current == 0 ? 1 : current) * 10;
+      current = 0;
+    } else {
+      final digit = _chineseDigits[char];
+      if (digit == null) return null;
+      current = digit;
+    }
+  }
+  total += current;
+  return total == 0 ? null : total;
+}
+
+/// 两处集名是否指同一集：先比原文，再比序号。
+bool episodeNameMatches(String left, String right) {
+  final a = left.trim();
+  final b = right.trim();
+  if (a.isEmpty || b.isEmpty) return false;
+  if (a == b) return true;
+  final leftOrdinal = episodeOrdinal(a);
+  final rightOrdinal = episodeOrdinal(b);
+  return leftOrdinal != null &&
+      rightOrdinal != null &&
+      leftOrdinal == rightOrdinal;
+}
+
+/// 把候选映射到「当前这一集」：在候选的详情里按集名找同一集。
+///
+/// 先按原文精确匹配，再按 [episodeOrdinal] 归一化匹配（`第3集` / `03` / `EP03` / `3`）。
 /// 候选本身记录的是**搜索时那一集**的地址；用户换集后如果直接用它，会跳到错误的集。
-/// 找不到同名集时退回候选自带的匹配（宁可给出可点的一条，也不要整块消失）。
+/// 找不到时退回候选自带的匹配（宁可给出可点的一条，也不要整块消失）。
 List<CrossSiteResolveAttempt> resolveAttemptsForEpisode(
   CrossSiteCandidate candidate,
   String? episodeName, {
@@ -141,10 +204,19 @@ List<CrossSiteResolveAttempt> resolveAttemptsForEpisode(
     if (attempts.length >= maxAttempts) break;
     final source = sources[lineIndex];
     var index = -1;
+    // 先精确匹配，再归一化（第3集 / 03 / EP03 / 3 / 第三集）。
     for (var j = 0; j < source.episodes.length; j++) {
       if (source.episodes[j].name.trim() == target) {
         index = j;
         break;
+      }
+    }
+    if (index < 0) {
+      for (var j = 0; j < source.episodes.length; j++) {
+        if (episodeNameMatches(source.episodes[j].name, target)) {
+          index = j;
+          break;
+        }
       }
     }
     if (index < 0) continue;

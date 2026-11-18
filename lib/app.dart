@@ -5687,7 +5687,8 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
               ),
               const SizedBox(height: 18),
               Text(
-                '修狗TV',
+                // 空状态也要用统一显示名（appDisplayName），别再写死「修狗TV」。
+                appDisplayName,
                 style: TextStyle(
                   fontSize: AppType.h1,
                   fontWeight: FontWeight.bold,

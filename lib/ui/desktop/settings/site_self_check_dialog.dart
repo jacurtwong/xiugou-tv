@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/app_info.dart';
 import '../../../core/companion/companion_spider_api.dart';
 import '../../../core/companion/site_self_check_report.dart';
 import '../../../core/config/models/vod_config.dart';
@@ -131,7 +132,7 @@ class _SiteSelfCheckDialogState extends State<SiteSelfCheckDialog> {
     final timeout = _entries.where((e) => e.isTimeout).length;
     final failed = _entries.length - ok - degraded - timeout;
     final buffer = StringBuffer()
-      ..writeln('修狗TV 站点体检结果')
+      ..writeln('$appDisplayName 站点体检结果')
       ..writeln(
           '共 ${_entries.length} 站：可用 $ok / 降级 $degraded / 失败 $failed / 超时 $timeout');
     for (final entry in _entries) {

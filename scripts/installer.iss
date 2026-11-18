@@ -1,6 +1,6 @@
 ﻿; Script generated for XiugouTV Windows x64 Installer
 #ifndef AppVersion
-  #define AppVersion "1.9.0"
+  #define AppVersion "1.9.1"
 #endif
 #ifndef SourceDir
   #define SourceDir "..\build\windows\x64\runner\Release"

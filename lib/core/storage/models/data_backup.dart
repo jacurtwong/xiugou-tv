@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../app_info.dart';
 
 /// 单个数据文件的备份条目：原文 + UTF-8 字节数 + SHA-256。
 class DataBackupEntry {
@@ -88,7 +89,7 @@ class DataBackup {
 
   factory DataBackup.fromJson(Map<String, dynamic> json) {
     if (json['format'] != format) {
-      throw const FormatException('不是 修狗TV 数据备份文件');
+      throw const FormatException('不是 $appDisplayName 数据备份文件');
     }
     if (json['version'] != version) {
       throw const FormatException('备份格式版本不受支持');

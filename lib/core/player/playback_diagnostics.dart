@@ -7,6 +7,7 @@
 /// 3. 引擎日志环形缓冲：只保留最近 [RecentLogBuffer.capacity] 条（④ 定 40）。
 library;
 
+import '../app_info.dart';
 import 'models/player_state.dart';
 
 /// 敏感字段名：命中（不区分大小写）的 query 参数 / 请求头，其值整体打码。
@@ -122,7 +123,7 @@ String buildPlaybackDiagnosticText({
     rawHeaders: spec?.headers,
   );
 
-  final buffer = StringBuffer('[修狗TV] 播放诊断信息')..writeln();
+  final buffer = StringBuffer('[$appDisplayName] 播放诊断信息')..writeln();
   buffer.writeln('时间: ${(now ?? DateTime.now()).toIso8601String()}');
   final title = spec?.title;
   if (title != null && title.isNotEmpty) {
