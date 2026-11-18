@@ -166,7 +166,7 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
       }
     }
 
-    await Future.wait([for (var i = 0; i < 4; i++) worker()]);
+    await Future.wait([for (var i = 0; i < 6; i++) worker()]);
   }
 
   Future<SourceProbe> _probe(CrossSiteCandidate candidate) async {
@@ -187,11 +187,14 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
           )
           .timeout(const Duration(seconds: 6));
       watch.stop();
-      if (!await _looksLikeMediaUrl(spec.url, spec.headers ?? const {})) {
+      // 体检的 ms 用**首字节时间**（TTFB），比解析耗时更接近"点下去多久能出画面"；
+      // 探测没测出来（0）时 UI 显示「✓ 可用」，不编造数字。
+      final media = await _probeMediaUrl(spec.url, spec.headers ?? const {});
+      if (!media.ok) {
         return SourceProbe(
-            ok: false, ms: watch.elapsedMilliseconds, reason: '网页直链');
+            ok: false, ms: media.ttfbMs, reason: media.reason ?? '不可播');
       }
-      return SourceProbe(ok: true, ms: watch.elapsedMilliseconds);
+      return SourceProbe(ok: true, ms: media.ttfbMs);
     } on TimeoutException {
       watch.stop();
       return SourceProbe(
@@ -620,53 +623,82 @@ String _shortFailure(Object error) {
   return text.isEmpty ? '未知错误' : text;
 }
 
-/// 已知媒体后缀：直接放行，不做探测。
-bool _hasMediaExtension(String url) {
-  final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
-  const suffixes = [
-    '.m3u8', '.m3u', '.mp4', '.m4v', '.ts', '.flv',
-    '.mkv', '.webm', '.mov', '.mp3', '.m4a', '.aac', '.mpd',
-  ];
-  return suffixes.any(path.endsWith);
-}
 
-/// 这个地址到底是媒体流还是网页？
+/// 一次媒体探测的结论：能不能播 + **首字节耗时**（TTFB）。
 ///
-/// 站点把「需要解析的网页」当直链返回时，mpv 会报 `Failed to recognize file format.`。
-/// 在这里先用 HEAD 探一次 Content-Type：是网页就让这条线路失败、换同站下一条线路。
-/// **探测失败（超时 / 405 / 没给 Content-Type）一律放行**——绝不因为探测把能播的源拦掉。
-Future<bool> _looksLikeMediaUrl(String url, Map<String, String> headers) async {
-  if (_hasMediaExtension(url)) return true;
+/// [ttfbMs] 是「发请求 → 收到响应头」的时间，比解析耗时更接近"点下去多久能出画面"；
+/// 探测失败（超时 / 方法不支持 / 无 Content-Type）时返回 `ok: true, ttfbMs: 0`，
+/// 表示"没测出来"而不是"不能播"——绝不因为探测把能播的源拦掉。
+typedef _MediaProbe = ({bool ok, int ttfbMs, String? reason});
+
+/// 检查地址是不是媒体，并顺便量一次首字节时间（TTFB）。
+///
+/// 站点把「需要解析的网页」当直链返回时，mpv 会报 `Failed to recognize file format.`；
+/// 先用 HEAD 探 Content-Type（不支持就退回 GET + Range），是网页就让这条线路失败。
+Future<_MediaProbe> _probeMediaUrl(
+    String url, Map<String, String> headers) async {
   final uri = Uri.tryParse(url);
-  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) return true;
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return (ok: true, ttfbMs: 0, reason: null);
+  }
   final client = HttpClientFactory.createHttpClient(
-    connectionTimeout: const Duration(seconds: 4),
+    connectionTimeout: const Duration(seconds: 3),
     idleTimeout: HttpClientFactory.dioDefaultIdleTimeout,
     proxy: DanmakuApi.systemProxy,
   );
+  final watch = Stopwatch();
   try {
     final request =
-        await client.headUrl(uri).timeout(const Duration(seconds: 4));
+        await client.headUrl(uri).timeout(const Duration(seconds: 3));
     headers.forEach(request.headers.set);
-    final response = await request.close().timeout(const Duration(seconds: 4));
+    watch.start();
+    final response = await request.close().timeout(const Duration(seconds: 5));
+    watch.stop();
     final mime = response.headers.contentType?.mimeType.toLowerCase() ?? '';
     try {
       await response.drain<void>();
     } catch (_) {
       // 丢弃响应体失败不影响结论。
     }
-    if (mime.isEmpty) return true;
-    if (mime.startsWith('video/') || mime.startsWith('audio/')) return true;
-    if (mime.contains('mpegurl')) return true;
-    if (mime == 'application/octet-stream' || mime == 'binary/octet-stream') {
-      return true;
-    }
-    return false;
+    return _judgeMime(mime, watch.elapsedMilliseconds);
   } catch (_) {
-    return true;
+    // HEAD 被拒（405/501）或直接失败：退回 GET + Range，同样量首字节。
+    try {
+      final request =
+          await client.getUrl(uri).timeout(const Duration(seconds: 3));
+      headers.forEach(request.headers.set);
+      request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
+      watch
+        ..reset()
+        ..start();
+      final response = await request.close().timeout(const Duration(seconds: 5));
+      watch.stop();
+      final mime = response.headers.contentType?.mimeType.toLowerCase() ?? '';
+      try {
+        await response.drain<void>();
+      } catch (_) {
+        // 同上：响应体丢弃失败不影响结论。
+      }
+      return _judgeMime(mime, watch.elapsedMilliseconds);
+    } catch (_) {
+      // 探测失败一律按"未知"放行，交给 mpv 自己判断。
+      return (ok: true, ttfbMs: 0, reason: null);
+    }
   } finally {
     client.close(force: true);
   }
+}
+
+_MediaProbe _judgeMime(String mime, int ttfbMs) {
+  if (mime.isEmpty) return (ok: true, ttfbMs: ttfbMs, reason: null);
+  if (mime.startsWith('video/') ||
+      mime.startsWith('audio/') ||
+      mime.contains('mpegurl') ||
+      mime == 'application/octet-stream' ||
+      mime == 'binary/octet-stream') {
+    return (ok: true, ttfbMs: ttfbMs, reason: null);
+  }
+  return (ok: false, ttfbMs: ttfbMs, reason: '网页直链');
 }
 
 Future<void> _switchPlaybackSource(
@@ -755,7 +787,8 @@ Future<void> _switchPlaybackSource(
         ).timeout(const Duration(seconds: 20)));
         // 解析成功但拿到的是网页（站点没给可播直链 / 需要额外解析）：
         // mpv 只会报 `Failed to recognize file format.`，这里提前判失败换下一条线路。
-        if (!await _looksLikeMediaUrl(spec.url, spec.headers ?? const {})) {
+        final media = await _probeMediaUrl(spec.url, spec.headers ?? const {});
+        if (!media.ok) {
           lastError = FormatException(
               '「${attempt.lineName}」返回的是网页而不是媒体地址（该站可能需要解析）');
           continue;
