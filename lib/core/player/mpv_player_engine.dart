@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'decode_diagnostics.dart';
+import 'hls_ad_filter.dart';
+import 'hls_ad_proxy.dart';
 import 'live_stream_tuning.dart';
 import 'models/player_settings.dart';
 import 'models/player_state.dart';
@@ -50,6 +52,9 @@ class MpvPlayerEngine
 
   late final Player _player;
   late final VideoController _videoController;
+
+  /// §AD 插播广告：本地播放列表代理（第一次真正需要过滤时才起 HTTP 服务）。
+  final HlsAdFilterProxy _adFilter = HlsAdFilterProxy();
 
   PlaybackStatus _status = PlaybackStatus.idle;
   Duration _position = Duration.zero;
@@ -619,15 +624,20 @@ class MpvPlayerEngine
     try {
       await _applySessionStreamProperties(spec.isLive, epoch);
       if (!_isCurrentSession(epoch) || openEpoch != _openEpoch) return;
-      await _applyPlaybackProxy(spec.url);
+      // 先决定「最终交给 mpv 的地址」，再按这个地址配代理：
+      // 换成回环地址时必须把 http-proxy 清空（否则 mpv 会把 127.0.0.1 也塞进系统代理）。
+      final filtered = await _resolveAdFilteredUrl(spec);
+      if (!_isCurrentSession(epoch) || openEpoch != _openEpoch) return;
+      await _applyPlaybackProxy(filtered.url);
       if (!_isCurrentSession(epoch) || openEpoch != _openEpoch) return;
       final media = Media(
-        spec.url,
+        filtered.url,
         // 站点没给 UA/Referer 时补浏览器默认值（有些源按 UA 拦非浏览器请求）。
+        // 这里用**原始**地址判断：分片由播放器直连 CDN，Referer 必须是源站的。
         httpHeaders: withBrowserHeaderFallbacks(spec.headers, spec.url,
             enabled: playbackSettings.browserHeaders),
         // 直播是实时流，带起播位置会让 mpv 尝试 seek 到不存在的时间点。
-        start: spec.isLive ? null : spec.startPosition,
+        start: spec.isLive ? null : filtered.start,
       );
       openedUri = media.uri;
       _openedMediaUri = openedUri;
@@ -639,6 +649,52 @@ class MpvPlayerEngine
       }
     }
     await _readOpenedMediaEvidence(epoch, openEpoch, openedUri);
+  }
+
+  /// §AD 插播广告过滤：把播放列表换成「已剪掉广告块」的本地地址。
+  ///
+  /// 只对 `.m3u8` 点播清单尝试；非 HLS、直播、拉取失败、无广告、判定为「整集切片」
+  /// 一律原样返回——**过滤永远不能挡住起播**。结论写进诊断日志（「复制诊断」可见）。
+  ///
+  /// 顺带把续播点换算到剪后的时间轴：剪掉的是广告，用户上次看到的位置不该跟着前移。
+  Future<({String url, Duration? start})> _resolveAdFilteredUrl(
+      MediaPlaySpec spec) async {
+    final fallback = (url: spec.url, start: spec.startPosition);
+    if (!playbackSettings.adFilterEnabled || spec.isLive) return fallback;
+    final uri = Uri.tryParse(spec.url);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return fallback;
+    }
+    final path = uri.path.toLowerCase();
+    if (!path.endsWith('.m3u8') && !path.endsWith('.m3u')) return fallback;
+    // 配了系统代理时不动：mpv 只有全局 http-proxy，换成回环地址后分片会被
+    // 一起塞进代理（代理在别的机器上解析 127.0.0.1），等于把能播的源搞坏。
+    final systemProxy = DanmakuApi.systemProxy();
+    if (systemProxy != null && systemProxy.isNotEmpty) {
+      _recentLogs.add('[ad-filter] 已配置系统代理，跳过剪辑（本地列表会被代理转发）');
+      return fallback;
+    }
+    final headers = withBrowserHeaderFallbacks(spec.headers, spec.url,
+            enabled: playbackSettings.browserHeaders) ??
+        const <String, String>{};
+    try {
+      final result =
+          await _adFilter.filter(spec.url, headers).timeout(const Duration(seconds: 8));
+      if (result == null) {
+        _recentLogs.add('[ad-filter] 未剪辑（无插播广告 / 直播 / 清单拉取失败），按原地址播放');
+        return fallback;
+      }
+      _recentLogs.add('[ad-filter] 已剪辑 ${result.cutCount} 段插播广告，'
+          '共 ${result.removedSeconds.toStringAsFixed(1)} 秒'
+          '${result.fromMaster ? '（多码率主列表，按播放器选中的码率裁剪）' : ''}');
+      return (
+        url: result.url,
+        start: shiftStartAfterCut(spec.startPosition, result.cuts),
+      );
+    } catch (error) {
+      _recentLogs.add('[ad-filter] 过滤失败，按原地址播放：$error');
+      return fallback;
+    }
   }
 
   Future<void> _readOpenedMediaEvidence(
@@ -1031,6 +1087,7 @@ class MpvPlayerEngine
     _seekRecovery.dispose();
     _cancelLiveReconnect();
     _cancelErrorConfirm();
+    await _adFilter.shutdown();
     await settingsApplication.dispose();
     for (final sub in _subscriptions) {
       await sub.cancel();

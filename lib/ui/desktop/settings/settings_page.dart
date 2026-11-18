@@ -2123,6 +2123,22 @@ class _PlayerSettingsPanelState extends State<PlayerSettingsPanel> {
                           _update(s.copyWith(autoLineSwitch: value)),
                     ),
                   ),
+                  const _RowDivider(),
+                  _SettingRow(
+                    title: '广告过滤',
+                    description: '点播起播前先读一次播放列表，把被 discontinuity 夹住的'
+                        '插播广告块整段剪掉（不是静音跳过，片长会变短）；'
+                        '片头 / 片尾广告只在特征与插播广告一致时才剪。'
+                        '没有广告、判不准、直播间、带字节范围的清单一律按原样播放，'
+                        '拉取失败也不会影响起播；配了系统代理时自动跳过。'
+                        '个别源误剪可关掉此项',
+                    trailing: Switch(
+                      key: const ValueKey('setting-ad-filter'),
+                      value: s.adFilterEnabled,
+                      onChanged: (value) =>
+                          _update(s.copyWith(adFilterEnabled: value)),
+                    ),
+                  ),
                 ],
               ),
             ),

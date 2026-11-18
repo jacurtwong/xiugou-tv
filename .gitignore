@@ -19,6 +19,8 @@ app.*.map.json
 /companion/dist/
 /companion/runtime/
 *.class
+# 本地手搓的启动快捷方式（指向 build/ 产物）
+/*.lnk
 
 # 研发文档不入库；仅保留根 README 和许可证 / 版权说明
 docs/
@@ -48,6 +50,8 @@ doc/
 !/SECURITY.md
 # §44 共享片段服务的部署 / D1 结构说明（随服务端代码入库）
 !/server/segments-worker/README.md
+# 变更日志：每次改动都要落到这里，随仓库分发
+!/Update.md
 
 # AI 提示、规则、会话、工具配置及本地工作记录不入库
 .do-it/

@@ -97,6 +97,13 @@ class PlayerSettings {
   /// 应对「探测请求有副作用」的源（方案 R2/R3 的降级开关）。
   final bool autoDetectLiveDirectMode;
 
+  /// 插播广告过滤（§AD）：起播前抓一次播放列表，把被 discontinuity 夹住的短广告块剪掉。
+  ///
+  /// 只对 `.m3u8` 点播清单生效；直播、无 `ENDLIST`、带字节范围、无广告的清单都原样放过。
+  /// 默认开启（用户可关）：拉清单失败、超时、判定为「整集切片」时一律退回原地址播放，
+  /// 不会有任何一个失败分支挡住起播。
+  final bool adFilterEnabled;
+
   /// 鼠标静止多久后隐藏光标（§55 口径：5 秒）。
   static const Duration cursorIdleDelay = Duration(seconds: 5);
 
@@ -125,6 +132,7 @@ class PlayerSettings {
     this.autoHideCursor = true,
     this.browserHeaders = true,
     this.autoDetectLiveDirectMode = true,
+    this.adFilterEnabled = true,
   });
 
   static const PlayerSettings defaults = PlayerSettings();
@@ -242,6 +250,7 @@ class PlayerSettings {
       autoHideCursor: json['autoHideCursor'] != false,
       browserHeaders: json['browserHeaders'] != false,
       autoDetectLiveDirectMode: json['autoDetectLiveDirectMode'] != false,
+      adFilterEnabled: json['adFilterEnabled'] != false,
     );
   }
 
@@ -275,6 +284,7 @@ class PlayerSettings {
         'autoHideCursor': autoHideCursor,
         'browserHeaders': browserHeaders,
         'autoDetectLiveDirectMode': autoDetectLiveDirectMode,
+        'adFilterEnabled': adFilterEnabled,
       };
 
   /// 画面缩放对应的 mpv 属性取值：比例模式强制对应比例，其余复位默认态。
@@ -329,6 +339,7 @@ class PlayerSettings {
     bool? autoHideCursor,
     bool? browserHeaders,
     bool? autoDetectLiveDirectMode,
+    bool? adFilterEnabled,
   }) {
     return PlayerSettings(
       hwdec: hwdec ?? this.hwdec,
@@ -356,6 +367,7 @@ class PlayerSettings {
       browserHeaders: browserHeaders ?? this.browserHeaders,
       autoDetectLiveDirectMode:
           autoDetectLiveDirectMode ?? this.autoDetectLiveDirectMode,
+      adFilterEnabled: adFilterEnabled ?? this.adFilterEnabled,
     );
   }
 
@@ -385,11 +397,12 @@ class PlayerSettings {
       other.externalPlayer == externalPlayer &&
       other.autoHideCursor == autoHideCursor &&
       other.browserHeaders == browserHeaders &&
-      other.autoDetectLiveDirectMode == autoDetectLiveDirectMode;
+      other.autoDetectLiveDirectMode == autoDetectLiveDirectMode &&
+      other.adFilterEnabled == adFilterEnabled;
 
   @override
   int get hashCode => Object.hashAll([hwdec, defaultVolume, defaultRate, audioChannels, audioDelayMs,
       toneMapping, scale, brightness, contrast, saturation, gamma, cacheSecs, hideWindowTitleBar,
       danmakuEnabled, danmaku, segmentsAutoApply, showMiniProgress, autoLineSwitch, holdRate, shortcuts,
-      externalPlayer, autoHideCursor, browserHeaders, autoDetectLiveDirectMode]);
+      externalPlayer, autoHideCursor, browserHeaders, autoDetectLiveDirectMode, adFilterEnabled]);
 }
