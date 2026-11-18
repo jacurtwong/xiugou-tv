@@ -16,6 +16,21 @@
 
 ---
 
+## [1.4.1] - 2026-11-18
+
+### 修复：关于页的 Commit Hash 每个包都带 `-dirty`
+
+- **现象**：1.4.0 安装后关于页显示 `Commit Hash: bbe8ef12-dirty`，但提交是干净的。
+- **根因**：`scripts/build_windows.ps1` 用 `git status --porcelain` 判断「源码有未提交改动」，
+  而 Flutter 每次构建都会重写 `windows/flutter/generated_plugin_registrant.{cc,h}` 与
+  `generated_plugins.cmake`（LF/CRLF 差异），这三个文件被当成改动 → 每个包都被打上 `-dirty`。
+- **修复**：dirty 判定排除这三个生成文件，只认真实源码改动。
+- **验证**：本版按「先提交 → 再打包」出包；打包日志会打印注入的哈希，产物 `app.so` 内嵌值不再带 `-dirty`。
+- **顺带**：本版同时作为「检查更新 → 下载 → 拉起安装器」链路的验证版本——
+  1.4.0 上点「检查更新」应能发现 1.4.1。
+
+---
+
 ## [1.4.0] - 2026-11-18
 
 ### 调整：改名「修狗TV（魔改版）」并全面指向自己的仓库

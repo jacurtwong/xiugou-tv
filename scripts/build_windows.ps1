@@ -144,7 +144,11 @@ $BuildTime = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $Commit = ""
 try {
     $Commit = (& git -C $ProjectRoot rev-parse --short=8 HEAD 2>$null).Trim()
-    if ($Commit -and (& git -C $ProjectRoot status --porcelain --untracked-files=no 2>$null)) { $Commit = "$Commit-dirty" }
+    # 只在「源码有未提交改动」时打 -dirty。Flutter 每次构建都会重写下面这三个生成文件
+    # （LF/CRLF 差异），它们不是源码改动——不排掉的话每个包都会显示 -dirty。
+    $dirty = (& git -C $ProjectRoot status --porcelain --untracked-files=no 2>$null) |
+        Where-Object { $_ -notmatch 'windows/flutter/generated_(plugin_registrant\.(cc|h)|plugins\.cmake)' }
+    if ($Commit -and $dirty) { $Commit = "$Commit-dirty" }
 } catch { $Commit = "" }
 $BuildArgs += "--dart-define=XIUGOU_BUILD_TIME=$BuildTime"
 if ($Commit) { $BuildArgs += "--dart-define=XIUGOU_COMMIT=$Commit" }
