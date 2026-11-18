@@ -11,6 +11,10 @@ const int maxCrossSiteSiteCount = 8;
 /// 候选影片展示 / 手动尝试上限（方案 §3.4）。
 const int maxCrossSiteCandidateCount = 3;
 
+/// 候选数量硬上限：选集抽屉要尽量列全来源，可显式传更大的 limit；
+/// 自动换源 / 换源对话框仍用上面的默认值 3。
+const int maxCrossSiteCandidateLimit = 12;
+
 /// 特别篇类别。只有同类才允许配对：宁可少配，也不把剧场版和 OVA 混为一部。
 enum CrossSiteSpecialKind {
   special('特别篇'),
@@ -545,8 +549,8 @@ List<CrossSiteCandidate> rankCrossSiteCandidates(
 }) {
   final effectiveLimit = limit <= 0
       ? 0
-      : (limit > maxCrossSiteCandidateCount
-          ? maxCrossSiteCandidateCount
+      : (limit > maxCrossSiteCandidateLimit
+          ? maxCrossSiteCandidateLimit
           : limit);
   if (effectiveLimit == 0) return const <CrossSiteCandidate>[];
 

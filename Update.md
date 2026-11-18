@@ -16,6 +16,25 @@
 
 ---
 
+## [1.6.1] - 2026-11-18
+
+### 修复：选集「其他来源」点了没反应；并放开候选数量
+
+- **现象**（1.6.0 实测）：抽屉里列出 3 个来源，鼠标点击毫无反应；而且只搜出 3 个。
+- **根因 1（点击）**：`FocusRing` 只负责键盘焦点与焦点环，**不处理鼠标点击**。
+  选集行是 `FocusRing` + 内层 `GestureDetector` 两层；我这一行只包了 `FocusRing`，
+  于是 Enter 能切、鼠标点了没反应。
+  → 补 `GestureDetector(behavior: opaque)` + `MouseRegion(cursor: click)`，与选集行写法一致。
+- **根因 2（只有 3 个）**：`CrossSiteSearchService` 的候选上限写死为
+  `maxCrossSiteCandidateCount = 3`（原本是给自动换源/对话框用的）。
+  → 新增 `CrossSiteSearchService(maxCandidates: …)` 与硬上限 `maxCrossSiteCandidateLimit = 12`；
+  选集抽屉显式要 **8** 个，自动换源与换源对话框仍是 3 个（行为不变）。
+- **验证**：`flutter analyze` 无新增问题；`flutter test` 34 例全过；完整打包 + 34 项冒烟门禁通过。
+- **边界**：8 个候选意味着最多 8 次详情探测（并发），首次打开抽屉可能要等更久
+  （搜索 8 秒 + 详情 8 秒是上限）；同一集搜过会复用结果，不会重复等。
+
+---
+
 ## [1.6.0] - 2026-11-18
 
 ### 调整：跨站换源搬进选集抽屉，自动搜索并按延迟排序

@@ -90,7 +90,9 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
     try {
       final result = await CrossSiteSearchService(
               searchEngine: _ref.read(searchEngineProvider),
-              siteApi: _ref.read(siteApiProvider))
+              siteApi: _ref.read(siteApiProvider),
+              // 抽屉要「尽量列全」：默认只探 3 个候选，这里放到 8 个。
+              maxCandidates: 8)
           .search(
         target: CrossSiteTarget(
           item: session.item,

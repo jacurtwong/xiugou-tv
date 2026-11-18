@@ -595,35 +595,44 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
     return FocusRing(
       onTap: () => sourceNav.onSelect(candidate),
       borderRadius: const BorderRadius.all(Radius.circular(AppRadii.sm)),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: ink, fontSize: AppType.body)),
-                  Text(subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: ink.withValues(alpha: 0.55),
-                          fontSize: AppType.caption)),
-                ],
-              ),
+      // FocusRing 只管键盘焦点与焦点环；鼠标点击必须另挂 GestureDetector
+      //（选集行也是这么做的）——只包 FocusRing 会表现为「点了没反应」。
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => sourceNav.onSelect(candidate),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: ink, fontSize: AppType.body)),
+                      Text(subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: ink.withValues(alpha: 0.55),
+                              fontSize: AppType.caption)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(formatLatency(latency),
+                    style: TextStyle(
+                        color: latencyColor,
+                        fontSize: AppType.caption,
+                        fontWeight: FontWeight.w600)),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(formatLatency(latency),
-                style: TextStyle(
-                    color: latencyColor,
-                    fontSize: AppType.caption,
-                    fontWeight: FontWeight.w600)),
-          ],
+          ),
         ),
       ),
     );

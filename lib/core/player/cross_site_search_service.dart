@@ -57,19 +57,28 @@ class CrossSiteSearchService {
   CrossSiteSearchService({
     required SearchEngine searchEngine,
     required SiteApi siteApi,
+    int maxCandidates = maxCrossSiteCandidateCount,
   }) : this.withLoaders(
           search: searchEngine.searchAllIncremental,
           detail: siteApi.fetchDetail,
+          maxCandidates: maxCandidates,
         );
 
   CrossSiteSearchService.withLoaders({
     required CrossSiteSearchLoader search,
     required CrossSiteDetailLoader detail,
+    this.maxCandidates = maxCrossSiteCandidateCount,
   })  : _search = search,
         _detail = detail;
 
   static const Duration searchBudget = Duration(seconds: 8);
   static const Duration detailTimeout = Duration(seconds: 8);
+
+  /// 最多返回多少个候选（详情探测数）。
+  ///
+  /// 换源对话框 / 自动换源用默认的 3；选集抽屉要「尽量列出所有来源」，
+  /// 由宿主显式传更大的值（延迟排序后多出来的排在后面，不影响快的优先）。
+  final int maxCandidates;
 
   final CrossSiteSearchLoader _search;
   final CrossSiteDetailLoader _detail;
@@ -133,7 +142,7 @@ class CrossSiteSearchService {
         final config = left.configIndex.compareTo(right.configIndex);
         return config != 0 ? config : left.order.compareTo(right.order);
       });
-      final shortlist = hits.take(maxCrossSiteCandidateCount).toList();
+      final shortlist = hits.take(maxCandidates).toList();
       final probes = <Future<_DetailOutcome>>[];
       for (final hit in shortlist) {
         if (cancelToken.isCancelled) break;
@@ -186,7 +195,7 @@ class CrossSiteSearchService {
         status: status,
         candidates: cancelToken.isCancelled
             ? const <CrossSiteCandidate>[]
-            : rankCrossSiteCandidates(candidates),
+            : rankCrossSiteCandidates(candidates, limit: maxCandidates),
         searchedSiteCount: selected.length,
         detailProbeCount: probes.length,
         searchTimedOut: collected.timedOut,
