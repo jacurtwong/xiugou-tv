@@ -64,6 +64,21 @@ class MpvPlayerEngine
   @override
   ValueListenable<AdFilterDebugInfo?> get adFilterDebug => _adFilterDebug;
 
+  @override
+  Future<double?> readNetworkSpeed() async {
+    if (_disposed) return null;
+    final platform = _player.platform;
+    if (platform is! NativePlayer) return null;
+    try {
+      final value = double.tryParse(await platform.getProperty('cache-speed'));
+      if (value == null || !value.isFinite || value <= 0) return null;
+      return value;
+    } catch (_) {
+      // 老版本 mpv 没有 cache-speed：OSD 只显示缓冲，不编造速度。
+      return null;
+    }
+  }
+
   PlaybackStatus _status = PlaybackStatus.idle;
   Duration _position = Duration.zero;
   Duration _duration = Duration.zero;

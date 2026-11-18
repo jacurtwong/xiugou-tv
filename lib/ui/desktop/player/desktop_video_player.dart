@@ -20,6 +20,7 @@ import '../../theme/app_tokens.dart';
 import '../keyboard/player_shortcuts.dart';
 import 'danmaku_layer.dart';
 import 'ad_debug_panel.dart';
+import 'playback_info_osd.dart';
 import 'danmaku_settings_panel.dart';
 import 'episode_drawer.dart';
 import 'playback_preparing_overlay.dart';
@@ -499,6 +500,9 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
 
   /// §AD 「广告调试」面板（D 键开关）；只读展示本集剪辑结论。
   bool _showAdDebug = false;
+
+  /// §OSD 播放信息层（I 键开关）：四角标题 / 分辨率 / 时间 / 进度 / 速度与缓冲。
+  bool _showInfoOsd = false;
   static const Duration _hideDelay = Duration(seconds: 3);
 
   /// §37：指针是否停在顶 / 底控制条热区内。
@@ -1193,6 +1197,13 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
         _showAdDebug ? '广告调试' : '已关闭广告调试');
   }
 
+  /// §OSD 播放信息层开关（默认 I 键）。
+  void _toggleInfoOsd() {
+    setState(() => _showInfoOsd = !_showInfoOsd);
+    _osdController.show(Icons.info_outline_rounded,
+        _showInfoOsd ? '播放信息' : '已关闭播放信息');
+  }
+
   void _handleExit() {
     // §AD 调试面板最优先：Esc 先收面板，再走原有的退出链路。
     if (_showAdDebug) {
@@ -1402,6 +1413,8 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
               onInvoke: (_) => _handleToggleDanmaku()),
           ToggleAdDebugIntent: CallbackAction<ToggleAdDebugIntent>(
               onInvoke: (_) => _toggleAdDebug()),
+          ToggleInfoOsdIntent: CallbackAction<ToggleInfoOsdIntent>(
+              onInvoke: (_) => _toggleInfoOsd()),
         },
         child: Focus(
           focusNode: _focusNode,
@@ -1777,6 +1790,15 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
                   ),
                   ),
                 ),
+
+                // 7.4 §OSD 播放信息（I 键）：四角只读信息，IgnorePointer 不挡交互。
+                if (_showInfoOsd)
+                  Positioned.fill(
+                    child: PlaybackInfoOsd(
+                      engine: widget.playerEngine,
+                      fallbackTitle: widget.playerInfoLabel,
+                    ),
+                  ),
 
                 // 7.5 §AD 广告调试面板（D 键）：浮在右上角，不挡控制条与选集抽屉。
                 if (_showAdDebug)

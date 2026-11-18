@@ -55,6 +55,11 @@ class ToggleAdDebugIntent extends Intent {
   const ToggleAdDebugIntent();
 }
 
+/// 播放信息 OSD 开关（默认 I）：标题 / 分辨率 / 时间 / 进度 / 速度与缓冲。
+class ToggleInfoOsdIntent extends Intent {
+  const ToggleInfoOsdIntent();
+}
+
 const _logicalKeys = <String, LogicalKeyboardKey>{
   'space': LogicalKeyboardKey.space,
   'escape': LogicalKeyboardKey.escape,
@@ -192,6 +197,7 @@ Intent _intentFor(PlayerShortcutAction action) => switch (action) {
       PlayerShortcutAction.previousEpisode => const PrevEpisodeIntent(),
       PlayerShortcutAction.nextEpisode => const NextEpisodeIntent(),
       PlayerShortcutAction.toggleDanmaku => const ToggleDanmakuIntent(),
+      PlayerShortcutAction.infoOsd => const ToggleInfoOsdIntent(),
       PlayerShortcutAction.adDebug => const ToggleAdDebugIntent(),
     };
 

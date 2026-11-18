@@ -81,4 +81,10 @@ abstract class PlayerEngine {
   ///
   /// 播放器的「广告调试」面板（D 键）读这个值解释「剪了几段 / 为什么没剪」。
   ValueListenable<AdFilterDebugInfo?> get adFilterDebug;
+
+  /// §OSD 瞬时下载速度（字节 / 秒），来自 mpv `cache-speed`。
+  ///
+  /// 播放信息 OSD（`I` 键）每秒取一次；mpv 构建不支持该属性时返回 null，
+  /// OSD 只显示缓冲秒数，不编造速度。
+  Future<double?> readNetworkSpeed();
 }

@@ -8,7 +8,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-0078D4" alt="平台">
-  <img src="https://img.shields.io/badge/版本-1.2.0-2ea44f" alt="版本">
+  <img src="https://img.shields.io/badge/版本-1.3.0-2ea44f" alt="版本">
   <img src="https://img.shields.io/badge/许可证-GPL--3.0-blue" alt="许可证">
   <a href="https://t.me/+Z-8NGECyhdkzMDVl" target="_blank">
     <img src="https://img.shields.io/badge/TG群组-点击加入-blue" alt="TG">
@@ -61,6 +61,7 @@
 - 片头 / 片尾跳过，按毫秒精确配置。
 - 插播广告自动剪辑：起播前把被 discontinuity 夹住的贴片广告整段剪掉（播放器设置里可关）。
 - 按 `D` 打开「广告调试」面板，查看本集剪了几段、每段起止，以及没剪的原因；`Esc` 关闭。
+- 按 `I` 打开播放信息 OSD：标题与分辨率、当前时间、进度、下载速度与缓冲秒数；再按一次关闭。
 - 自动换线与手动换线，失败提示统一呈现。
 - 键盘快捷键与鼠标操作并行。
 

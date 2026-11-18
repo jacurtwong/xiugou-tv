@@ -15,6 +15,7 @@ enum PlayerShortcutAction {
   previousEpisode('上一集'),
   nextEpisode('下一集'),
   toggleDanmaku('显示 / 隐藏弹幕'),
+  infoOsd('显示 / 隐藏播放信息 OSD'),
   adDebug('广告调试面板（剪辑结果）');
 
   final String label;
@@ -158,6 +159,8 @@ class PlayerShortcutBindings {
     PlayerShortcutAction.previousEpisode: [PlayerKeyBinding('pageUp')],
     PlayerShortcutAction.nextEpisode: [PlayerKeyBinding('pageDown')],
     PlayerShortcutAction.toggleDanmaku: [PlayerKeyBinding('keyB')],
+    // I：播放信息 OSD（标题 / 分辨率 / 时间 / 进度 / 速度与缓冲）。
+    PlayerShortcutAction.infoOsd: [PlayerKeyBinding('keyI')],
     // 2026-11-18：D 让给「广告调试」（与 KimBoxPC 一致），弹幕默认改到 B。
     PlayerShortcutAction.adDebug: [PlayerKeyBinding('keyD')],
   });
