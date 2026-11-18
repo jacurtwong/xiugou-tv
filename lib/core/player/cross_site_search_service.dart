@@ -273,9 +273,13 @@ class CrossSiteSearchService {
       return completion.future;
     }
     try {
+      final override = target.searchKeywordOverride?.trim() ?? '';
+      final keyword = override.isNotEmpty
+          ? override
+          : crossSiteSearchKeyword(target.item.name);
       final stream = _search(
         sites,
-        target.item.name.trim(),
+        keyword.isEmpty ? target.item.name.trim() : keyword,
         cancelToken: childToken,
       );
       if (cancelToken.isCancelled) {

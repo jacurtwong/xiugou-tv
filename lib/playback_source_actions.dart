@@ -91,24 +91,37 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
     var message = '';
     try {
       final sites = _ref.read(configRepositoryProvider).currentVodConfig.sites;
-      final result = await CrossSiteSearchService(
-              searchEngine: _ref.read(searchEngineProvider),
-              siteApi: _ref.read(siteApiProvider),
-              // 全源搜索：配置里有多少站就搜多少站（KimBoxPC 的「同片源」口径），
-              // 候选也放宽到 24 个，预算 20 秒——超出预算才放弃慢站。
-              maxSites: sites.length,
-              maxCandidates: 24,
-              budget: const Duration(seconds: 20))
-          .search(
-        target: CrossSiteTarget(
-          item: session.item,
-          episodeName: session.episodes[session.index].name,
-          episodeCount: session.episodes.length,
-          siteKey: session.site!.key,
-        ),
-        sites: sites,
-        cancelToken: token,
-      );
+      final rawName = session.item.name.trim();
+      final cleanedName = crossSiteSearchKeyword(rawName);
+      CrossSiteSearchResult result;
+      final service = CrossSiteSearchService(
+          searchEngine: _ref.read(searchEngineProvider),
+          siteApi: _ref.read(siteApiProvider),
+          // 全源搜索：配置里有多少站就搜多少站（KimBoxPC 的「同片源」口径），
+          // 候选也放宽到 24 个，预算 20 秒——超出预算才放弃慢站。
+          maxSites: sites.length,
+          maxCandidates: 24,
+          budget: const Duration(seconds: 20));
+      Future<CrossSiteSearchResult> run({String? override}) => service.search(
+            target: CrossSiteTarget(
+              item: session.item,
+              episodeName: session.episodes[session.index].name,
+              episodeCount: session.episodes.length,
+              siteKey: session.site!.key,
+              searchKeywordOverride: override,
+            ),
+            sites: sites,
+            cancelToken: token,
+          );
+      // 只用片名搜（站点标题里的 HD / 年份 / 更新至N集不能带进关键词）；
+      // 万一清洗后一个都没搜到，再用原始标题兜一次——有的站反而要连后缀一起搜才命中。
+      result = await run();
+      if (result.candidates.isEmpty &&
+          cleanedName.isNotEmpty &&
+          cleanedName != rawName &&
+          !token.isCancelled) {
+        result = await run(override: rawName);
+      }
       if (!identical(_token, token) || token.isCancelled) return;
       final sorted = sortCandidatesByLatency(result.candidates);
       message = sorted.isNotEmpty

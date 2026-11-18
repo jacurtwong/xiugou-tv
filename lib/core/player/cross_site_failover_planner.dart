@@ -109,6 +109,7 @@ class CrossSiteTarget {
     required this.episodeName,
     required this.episodeCount,
     this.siteKey,
+    this.searchKeywordOverride,
   });
 
   final VodItem item;
@@ -119,6 +120,12 @@ class CrossSiteTarget {
 
   /// 当前站 key；[evaluateCrossSiteCandidate] 未显式传 currentSiteKey 时用它。
   final String? siteKey;
+
+  /// 强制指定搜索关键词（默认由 [crossSiteSearchKeyword] 从片名里提取）。
+  ///
+  /// 只在「清洗后的片名搜不到东西」时用它退回原始标题——实测有的站要连
+  /// `- HD` 这类后缀一起搜才命中。
+  final String? searchKeywordOverride;
 
   CrossSiteTitleIdentity get identity => parseCrossSiteTitle(item.name);
 
@@ -740,8 +747,8 @@ int? _parseChineseNumeral(String value) {
   return (special, working);
 }
 
-String _normalizeTitleBase(String value) =>
-    _stripPunctuation(value).replaceAll(RegExp(r'\s+'), '').toLowerCase();
+String _normalizeTitleBase(String value) => _stripPunctuation(
+        crossSiteSearchKeyword(value)).replaceAll(RegExp(r'\s+'), '').toLowerCase();
 
 String _stripPunctuation(String value) =>
     value.replaceAll(_punctuationPattern, '');
@@ -749,6 +756,65 @@ String _stripPunctuation(String value) =>
 String _comparableText(String? value) {
   if (value == null || value.trim().isEmpty) return '';
   return _normalizeTitleBase(value);
+}
+
+/// 质量 / 版本 / 语言这类「不是片名」的尾缀。
+///
+/// 站点 `vod_name` 常写成「片名 - HD」「片名（2026）国语」「片名 更新至24集」；
+/// 拿整串去搜经常一个结果都搜不到（用户 2026-11-19 反馈）。
+const Set<String> _editionMarkers = <String>{
+  'hd', '高清', '超清', '蓝光', '4k', 'hdr', '2160p', '1080p', '720p', '480p',
+  'hdtv', 'bd', 'bdrip', 'tc', 'ts', 'web', 'webdl', 'web-dl', 'remux', 'dvd',
+  '国语', '粤语', '英语', '国配', '日语', '韩语', '中字', '中文字幕', '双字',
+  '双语', '完整版', '未删减', '抢先', '抢鲜', '正片', '连载', '高清版', '全集',
+};
+
+/// 从站点标题里提取**真正的片名**，用于跨站搜索关键词。
+///
+/// 规则：先去掉括号块（年份 / 地区 / 清晰度常写在里面），再按分隔符取第一段，
+/// 最后反复剥掉尾部的质量 / 语言 / 集数标记。取不出来就返回整理后的原文。
+String crossSiteSearchKeyword(String value) {
+  var text = _toHalfWidth(value).trim();
+  if (text.isEmpty) return '';
+  text = text.replaceAll(RegExp(r'[\(（\[【〔][^\)）\]】〕]*[\)）\]】〕]'), ' ');
+  final parts = text.split(RegExp(r'\s*[-–—:|｜/·]\s*'));
+  for (final part in parts) {
+    final candidate = _stripEditionMarkers(part);
+    if (candidate.isNotEmpty) return candidate;
+  }
+  return _stripEditionMarkers(text);
+}
+
+String _stripEditionMarkers(String value) {
+  var text = value.trim();
+  if (text.isEmpty) return '';
+  // 集数类尾缀（更新至24集 / 全40集 / 24集全）先整体去掉。
+  text = text.replaceAll(
+      RegExp(r'(更新至|全集|全)\s*\d{1,4}\s*集?$|第?\s*\d{1,4}\s*集$'), '');
+  var changed = true;
+  while (changed && text.isNotEmpty) {
+    changed = false;
+    for (final marker in _editionMarkers) {
+      final pattern = RegExp(
+          '(.{0,1})${RegExp.escape(marker)}\$',
+          caseSensitive: false);
+      final match = pattern.firstMatch(text);
+      if (match == null) continue;
+      final before = match.group(1) ?? '';
+      // 英文标记要求前面是分隔符或边界，避免把片名里的字母吃掉（如 "bed"）。
+      if (RegExp(r'^[a-z0-9]').hasMatch(marker) &&
+          before.isNotEmpty &&
+          !RegExp(r'[\s\-_:：·|/]').hasMatch(before)) {
+        continue;
+      }
+      final next = text.substring(0, match.start) + before.trim();
+      if (next.trim() == text) continue;
+      text = next.trim();
+      changed = true;
+      break;
+    }
+  }
+  return text.trim();
 }
 
 CrossSiteCoarseType? _coarseTypeOfToken(String token) {
