@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import '../player/models/player_state.dart';
+import '../player/page_media_resolver.dart';
 import 'parse_engine.dart';
 import 'search_cancel_token.dart';
 import '../companion/companion_process_manager.dart';
@@ -49,6 +50,9 @@ class SiteApi {
 
   /// 首次启动预热状态的对外窗口（UI 顶部提示条监听它）。
   final ValueNotifier<PrewarmStatus> prewarm = ValueNotifier(PrewarmStatus.idle);
+
+  /// 分享页 → 真实 m3u8 的本地解析器（部分 CMS 站的 `vod_play_url` 给的是播放页）。
+  final PageMediaResolver _pageMedia = PageMediaResolver();
 
   SiteApi({
     CmsJsonApi? cmsApi,
@@ -327,7 +331,20 @@ class SiteApi {
   }) async {
     if (site == null || !site.usesCompanion) {
       final resolved = await parseEngine.parse(id, flag: flag, parses: parses);
-      return MediaPlaySpec(url: resolved.url, headers: resolved.headers ?? site?.header);
+      var url = resolved.url;
+      var headers = resolved.headers ?? site?.header;
+      // 部分 CMS 站（西瓜 / 吉吉 / 非凡 / 电影天堂）给的 `vod_play_url` 是分享页
+      // （`/share/…` `/play/…` `/watch/…`），真正的 m3u8 写在页面脚本里。
+      // 这些站 needsParse 是 0，不会走解析引擎——本地抠一次，否则 mpv 只会报
+      // `Failed to recognize file format.`。
+      if (looksLikeSharePage(url)) {
+        final media = await _pageMedia.resolve(url, headers: headers);
+        if (media != null && media.isNotEmpty) {
+          url = media;
+          headers = _mergePlaybackHeaders([headers, resolved.headers]);
+        }
+      }
+      return MediaPlaySpec(url: url, headers: headers);
     }
     if (!await _ensureCompanionReady(site)) {
       throw const FormatException('Companion 服务不可用');

@@ -1,5 +1,34 @@
 ---
 
+## [1.10.0] - 2026-11-19
+
+### 新增：分享页本地解析——西瓜 / 吉吉 / 非凡 / 电影天堂 现在能换过去了
+
+- **现象**：这四个站（以及同源的其它站）在「其他来源」里能列出、也能点，但换过去就失败。
+- **根因（真实抓包）**：它们的 `vod_play_url` 给的不是媒体直链，而是**分享页**：
+  - 西瓜 `https://svip.xgplay20.com/play/50818_YiJ0wqoIUF7QdJmi-3`
+  - 吉吉 `https://svip.jijiplay6.com/watch/f8/b754/8640ea5e/5e49065484c792ce6f`
+  - 非凡 `https://super.ffzy-online6.com/share/85b25f84…`
+  - 电影天堂 `https://svip.dyttplay1.com/share/4a643e03…`
+
+  真正的地址写在页面脚本里：`const url = "/20261023/43933_85b25f84/index.m3u8?sign=…"`。
+  这些站 `needsParse` 是 0，不会走解析引擎，于是 mpv 拿到 HTML → `Failed to recognize file format.`
+- **改动**：
+  - 新增 `core/player/page_media_resolver.dart`：
+    - `extractMediaUrlFromHtml()` 纯函数：脚本里的 `url` 赋值 → 页面里写死的绝对地址
+      （含 `\/` 转义）→ 相对 `*.m3u8/.mp4/.flv/.mkv` 路径，按页面 origin 补全；
+    - `PageMediaResolver.resolve()`：抓页面（补 UA/Referer）→ 抽地址，带 200 条缓存；
+  - 接入 `SiteApi.resolvePlayback` 的 CMS 分支：`looksLikeSharePage(url)` 为真时先本地解析，
+    成功就用真实 m3u8，失败仍按原逻辑返回（错误提示不变）；
+  - 首播与换源走的是同一个 `resolvePlayback`，两条路径一起修好。
+- **验证**：四个站真实链路逐个跑通（页面 → 抽出的地址 → 请求）：
+  `西瓜 206 application/vnd.apple.mpegurl`、`吉吉 206 mpegurl`、`非凡 206 mpegurl`、`电影天堂 206 mpegurl`；
+  `flutter analyze` 无新增问题；`flutter test` **53 例全过**（新增 5 例：分享页抽取、转义、相对路径、抽不到、分享页判定）；
+  完整打包 + 34 项冒烟门禁通过。
+- **边界**：只能解析「页面里直接写了媒体地址」的情况；需要执行 JS / 加密的页面仍解析不出来，
+  会保持原来的失败路径。
+---
+
 ## [1.9.4] - 2026-11-19
 
 ### 修复：1.9.3 的体检误判（大量来源被标「网页直链」、暴风也用不了）；体检改用 ping
