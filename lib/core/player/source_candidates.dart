@@ -107,6 +107,59 @@ List<CrossSiteCandidate> sortCandidatesByProbe(
       [for (final entry in indexed) entry.$2]);
 }
 
+/// 跨站搜索的缓存键：**整部剧一次搜索**，换集只换集名（用户 2026-11-19 口径）。
+///
+/// 用「规范化片名 + 集数」而不是 item.id：换源后 item 来自别的站点，id 必然不同，
+/// 但片名一样、集数一样就该复用同一批来源。
+String sourceCandidatesShowKey(VodItem item, int episodeCount) {
+  final name = item.name.replaceAll(RegExp(r'\s+'), '').toLowerCase();
+  return '$name::$episodeCount';
+}
+
+/// 把候选映射到「当前这一集」：在候选的详情里按集名找同名集。
+///
+/// 候选本身记录的是**搜索时那一集**的地址；用户换集后如果直接用它，会跳到错误的集。
+/// 找不到同名集时退回候选自带的匹配（宁可给出可点的一条，也不要整块消失）。
+List<CrossSiteResolveAttempt> resolveAttemptsForEpisode(
+  CrossSiteCandidate candidate,
+  String? episodeName, {
+  int maxAttempts = 3,
+}) {
+  final target = episodeName?.trim() ?? '';
+  if (target.isEmpty) return resolveLineAttempts(candidate, maxAttempts: maxAttempts);
+
+  final attempts = <CrossSiteResolveAttempt>[];
+  final sources = candidate.detail.sources;
+  // 候选线路优先，其余线路按配置顺序补；只在同一集里找。
+  final order = <int>[
+    if (candidate.sourceIndex >= 0 && candidate.sourceIndex < sources.length)
+      candidate.sourceIndex,
+    for (var i = 0; i < sources.length; i++)
+      if (i != candidate.sourceIndex) i,
+  ];
+  for (final lineIndex in order) {
+    if (attempts.length >= maxAttempts) break;
+    final source = sources[lineIndex];
+    var index = -1;
+    for (var j = 0; j < source.episodes.length; j++) {
+      if (source.episodes[j].name.trim() == target) {
+        index = j;
+        break;
+      }
+    }
+    if (index < 0) continue;
+    attempts.add(CrossSiteResolveAttempt(
+      lineIndex: lineIndex,
+      lineName: source.name,
+      episode: source.episodes[index],
+      episodeIndex: index,
+    ));
+  }
+  return attempts.isEmpty
+      ? resolveLineAttempts(candidate, maxAttempts: maxAttempts)
+      : attempts;
+}
+
 /// 选集抽屉「其他来源」的自动搜索结果。
 ///
 /// 与换源对话框的区别只在**排序**：对话框按匹配度（`score`）排，

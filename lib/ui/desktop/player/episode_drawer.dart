@@ -79,8 +79,11 @@ class PlayerEpisodeListNav {
   /// 换线路回调：参数是 `PlaybackSession.sources` 的下标。
   final ValueChanged<int> onSelectLine;
 
-  /// 本集标识（`站点::集名`）：换集后「其他来源」的旧结果作废。
-  final String episodeKey;
+  /// 整部剧的搜索键（片名 + 集数）：**换集不重搜**，只有换剧才作废。
+  final String showKey;
+
+  /// 当前这一集的集名：候选行显示它，换源时也按它去目标站点找同一集。
+  final String currentEpisodeName;
 
   /// 「其他来源」：自动跨站搜索 + 按延迟排序的候选列表（为空时不显示该区块）。
   final PlayerSourceCandidatesNav? sourceCandidates;
@@ -93,7 +96,8 @@ class PlayerEpisodeListNav {
     this.browsingPlayingLine = true,
     this.lineName,
     this.switching = false,
-    this.episodeKey = '',
+    this.showKey = '',
+    this.currentEpisodeName = '',
     this.sourceCandidates,
   });
 }
@@ -181,11 +185,11 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
     _panelMounted = widget.open;
     if (widget.open) {
       final candidatesNav = widget.nav?.sourceCandidates;
-      final episodeKey = widget.nav?.episodeKey ?? '';
-      if (candidatesNav != null && episodeKey.isNotEmpty) {
+      final showKey = widget.nav?.showKey ?? '';
+      if (candidatesNav != null && showKey.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !widget.open) return;
-          candidatesNav.onEnsure(episodeKey);
+          candidatesNav.onEnsure(showKey);
         });
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -204,11 +208,11 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
       _cursor = _currentIndex;
       // 打开抽屉即自动跨站搜「其他来源」：同一集搜过会直接复用结果。
       final candidatesNav = widget.nav?.sourceCandidates;
-      final episodeKey = widget.nav?.episodeKey ?? '';
-      if (candidatesNav != null && episodeKey.isNotEmpty) {
+      final showKey = widget.nav?.showKey ?? '';
+      if (candidatesNav != null && showKey.isNotEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !widget.open) return;
-          candidatesNav.onEnsure(episodeKey);
+          candidatesNav.onEnsure(showKey);
         });
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -546,7 +550,7 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
                 visualDensity: VisualDensity.compact,
                 onPressed: state.searching
                     ? null
-                    : () => sourceNav.onEnsure(nav.episodeKey),
+                    : () => sourceNav.onEnsure(nav.showKey),
                 icon: Icon(Icons.refresh_rounded, color: ink),
               ),
             ],

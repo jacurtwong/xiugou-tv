@@ -40,9 +40,11 @@ final switchPlaybackSourceProvider = Provider<
     _switchPlaybackSource(ref, choose, preselect: preselect));
 
 /// 直接切到某个已知候选（选集抽屉「其他来源」点击时用）：不重新搜索。
-final switchToSourceCandidateProvider =
-    Provider<Future<void> Function(CrossSiteCandidate)>((ref) => (candidate) =>
-        _switchPlaybackSource(ref, (_) async => null, preselect: candidate));
+final switchToSourceCandidateProvider = Provider<
+    Future<void> Function(CrossSiteCandidate, {String? episodeName})>((ref) =>
+    (candidate, {String? episodeName}) => _switchPlaybackSource(
+        ref, (_) async => null,
+        preselect: candidate, episodeName: episodeName));
 
 /// 选集抽屉「其他来源」的自动搜索控制器。
 ///
@@ -225,10 +227,9 @@ final sourceCandidatesPrefetchProvider = Provider<void>((ref) {
         session.index >= session.episodes.length) {
       return;
     }
-    final episodeKey =
-        '${session.site!.key}::${session.episodes[session.index].name}';
+    final showKey = sourceCandidatesShowKey(session.item, session.episodes.length);
     debounce = Timer(sourceCandidatesPrefetchDelay, () {
-      unawaited(ref.read(sourceCandidatesProvider.notifier).ensure(episodeKey));
+      unawaited(ref.read(sourceCandidatesProvider.notifier).ensure(showKey));
     });
   });
   ref.onDispose(() => debounce?.cancel());
@@ -672,6 +673,7 @@ Future<void> _switchPlaybackSource(
   Ref ref,
   PlaybackSourceChooser choose, {
   CrossSiteCandidate? preselect,
+  String? episodeName,
 }) async {
   if (_sourceChangeBlocked(ref)) return;
   final session = _sourceSearchContext(ref);
@@ -732,7 +734,7 @@ Future<void> _switchPlaybackSource(
     owner.status('正在解析${candidate.site.name}…');
     // 一个站点常有多条线路（`PlayFrom`），候选只挑了其中最匹配的那条；那条解析失败时
     // 同站其它线路往往还能播。所以按「候选线路 → 同站其它线路」依次尝试，最多 3 条。
-    final attempts = resolveLineAttempts(candidate);
+    final attempts = resolveAttemptsForEpisode(candidate, episodeName);
     MediaPlaySpec? resolved;
     var resolvedSourceIndex = candidate.sourceIndex;
     var resolvedSourceName = candidate.source.name;
@@ -857,9 +859,10 @@ Future<void> _switchPlaybackSource(
 }
 
 /// 选集抽屉「其他来源」点选：直接切到该候选（不再跨站搜索）。
-void _handleSourceCandidatePick(
-    BuildContext context, WidgetRef ref, CrossSiteCandidate candidate) {
-  unawaited(ref.read(switchToSourceCandidateProvider)(candidate));
+void _handleSourceCandidatePick(BuildContext context, WidgetRef ref,
+    CrossSiteCandidate candidate, String episodeName) {
+  unawaited(ref
+      .read(switchToSourceCandidateProvider)(candidate, episodeName: episodeName));
 }
 
 Future<CrossSiteCandidate?> _choosePlaybackSource(BuildContext context,

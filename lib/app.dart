@@ -2113,14 +2113,15 @@ PlayerEpisodeListNav? _buildEpisodeListNav(
     lineName: browseSource.name,
     browsingPlayingLine: browsingPlayingLine,
     switching: session.switching || busy,
-    episodeKey:
-        '${session.site?.key ?? ''}::${session.episodes[session.index].name}',
+    // 整部剧只搜一次：键是「片名 + 集数」，换集复用它，只有换剧才重搜。
+    showKey: sourceCandidatesShowKey(session.item, session.episodes.length),
+    currentEpisodeName: session.episodes[session.index].name,
     sourceCandidates: PlayerSourceCandidatesNav(
       state: ref.watch(sourceCandidatesProvider),
       onEnsure: (key) =>
           unawaited(ref.read(sourceCandidatesProvider.notifier).ensure(key)),
-      onSelect: (candidate) =>
-          _handleSourceCandidatePick(playerContext, ref, candidate),
+      onSelect: (candidate) => _handleSourceCandidatePick(
+          playerContext, ref, candidate, session.episodes[session.index].name),
     ),
     onSelectEpisode: (index) => unawaited(
       browsingPlayingLine

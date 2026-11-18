@@ -50,7 +50,7 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
   /// 打开即自动跨站搜「其他来源」：同一集搜过会复用结果，不会重复等。
   void _ensureCandidates() {
     final candidatesNav = widget.nav?.sourceCandidates;
-    final episodeKey = widget.nav?.episodeKey ?? '';
+    final episodeKey = widget.nav?.showKey ?? '';
     if (candidatesNav != null && episodeKey.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !widget.open) return;
@@ -175,7 +175,7 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                   visualDensity: VisualDensity.compact,
                   onPressed: state?.searching == true
                       ? null
-                      : () => candidatesNav.onEnsure(nav.episodeKey),
+                      : () => candidatesNav.onEnsure(nav.showKey),
                   icon: Icon(Icons.refresh_rounded, color: ink),
                 ),
             ],
@@ -207,8 +207,8 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                   _hint(palette, '自动搜索中…')
                 else if (state.hasCandidates) ...[
                   for (final candidate in state.candidates)
-                    _candidateRow(
-                        context, palette, candidatesNav, state, candidate),
+                    _candidateRow(context, palette, candidatesNav, state, candidate,
+                        nav.currentEpisodeName),
                   if (state.candidates
                       .any((candidate) => state.probeFor(candidate) == null))
                     _hint(palette, '正在检测可用性…'),
@@ -244,7 +244,8 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
       AppPalette palette,
       PlayerSourceCandidatesNav candidatesNav,
       SourceCandidatesState state,
-      CrossSiteCandidate candidate) {
+      CrossSiteCandidate candidate,
+      String currentEpisodeName) {
     final probe = state.probeFor(candidate);
     final searchLatency = candidate.latencyMs;
     final searchColor = searchLatency <= 0
@@ -272,7 +273,7 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
       context,
       palette,
       title: '${candidate.site.name} · ${candidate.source.name}',
-      subtitle: '${candidate.episodeName}'
+      subtitle: '${currentEpisodeName.isEmpty ? candidate.episodeName : currentEpisodeName}'
           '${candidate.confidence == CrossSiteConfidence.high ? '' : ' · 请确认'}',
       trailing: trailing,
       trailingColor: trailingColor,
