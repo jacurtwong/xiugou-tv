@@ -518,6 +518,55 @@ String _shortFailure(Object error) {
   return text.isEmpty ? '未知错误' : text;
 }
 
+/// 已知媒体后缀：直接放行，不做探测。
+bool _hasMediaExtension(String url) {
+  final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+  const suffixes = [
+    '.m3u8', '.m3u', '.mp4', '.m4v', '.ts', '.flv',
+    '.mkv', '.webm', '.mov', '.mp3', '.m4a', '.aac', '.mpd',
+  ];
+  return suffixes.any(path.endsWith);
+}
+
+/// 这个地址到底是媒体流还是网页？
+///
+/// 站点把「需要解析的网页」当直链返回时，mpv 会报 `Failed to recognize file format.`。
+/// 在这里先用 HEAD 探一次 Content-Type：是网页就让这条线路失败、换同站下一条线路。
+/// **探测失败（超时 / 405 / 没给 Content-Type）一律放行**——绝不因为探测把能播的源拦掉。
+Future<bool> _looksLikeMediaUrl(String url, Map<String, String> headers) async {
+  if (_hasMediaExtension(url)) return true;
+  final uri = Uri.tryParse(url);
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) return true;
+  final client = HttpClientFactory.createHttpClient(
+    connectionTimeout: const Duration(seconds: 4),
+    idleTimeout: HttpClientFactory.dioDefaultIdleTimeout,
+    proxy: DanmakuApi.systemProxy,
+  );
+  try {
+    final request =
+        await client.headUrl(uri).timeout(const Duration(seconds: 4));
+    headers.forEach(request.headers.set);
+    final response = await request.close().timeout(const Duration(seconds: 4));
+    final mime = response.headers.contentType?.mimeType.toLowerCase() ?? '';
+    try {
+      await response.drain<void>();
+    } catch (_) {
+      // 丢弃响应体失败不影响结论。
+    }
+    if (mime.isEmpty) return true;
+    if (mime.startsWith('video/') || mime.startsWith('audio/')) return true;
+    if (mime.contains('mpegurl')) return true;
+    if (mime == 'application/octet-stream' || mime == 'binary/octet-stream') {
+      return true;
+    }
+    return false;
+  } catch (_) {
+    return true;
+  } finally {
+    client.close(force: true);
+  }
+}
+
 Future<void> _switchPlaybackSource(
   Ref ref,
   PlaybackSourceChooser choose, {
@@ -601,6 +650,13 @@ Future<void> _switchPlaybackSource(
           parseEngine: ref.read(parseEngineProvider),
           parses: owner.config.parses,
         ).timeout(const Duration(seconds: 20)));
+        // 解析成功但拿到的是网页（站点没给可播直链 / 需要额外解析）：
+        // mpv 只会报 `Failed to recognize file format.`，这里提前判失败换下一条线路。
+        if (!await _looksLikeMediaUrl(spec.url, spec.headers ?? const {})) {
+          lastError = FormatException(
+              '「${attempt.lineName}」返回的是网页而不是媒体地址（该站可能需要解析）');
+          continue;
+        }
         resolved = spec;
         resolvedSourceIndex = attempt.lineIndex;
         resolvedSourceName = attempt.lineName;
@@ -613,7 +669,7 @@ Future<void> _switchPlaybackSource(
       }
     }
     if (resolved == null) {
-      throw StateError('该来源的 ${attempts.length} 条线路都没能解析'
+      throw StateError('该来源的 ${attempts.length} 条线路都没能播放'
           '${lastError == null ? '' : '：${_shortFailure(lastError)}'}');
     }
     var target = resolved;

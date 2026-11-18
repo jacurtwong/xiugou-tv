@@ -32,6 +32,7 @@ import 'core/live/live_switch_reconcile.dart';
 import 'core/live/live_text_loader.dart';
 import 'core/live/epg_repository.dart';
 import 'core/history/history_match.dart';
+import 'core/net/http_client_factory.dart';
 import 'core/danmaku/danmaku_api.dart';
 import 'core/danmaku/danmaku_cache.dart';
 import 'core/danmaku/danmaku_controller.dart';
