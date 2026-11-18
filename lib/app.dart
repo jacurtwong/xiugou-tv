@@ -2077,8 +2077,9 @@ PlayerEpisodeListNav? _buildEpisodeListNav(
           PlayFrom(name: session.sourceName, episodes: session.episodes),
         ]
       : session.sources;
-  final hasChoices = session.episodes.length > 1 || sources.length > 1;
-  if (!hasChoices) return null;
+  // 单片（1 集 + 1 线路）也要给 nav：这种片子的「选集」里主要是**播放源**，
+  // 换源正是它唯一的用途；以前这里直接 return null，导致电影类内容完全没法换源
+  //（用户 2026-11-19 反馈）。
   final requestedBrowse = ref.watch(episodeBrowseSourceIndexProvider);
   final browseSourceIndex = requestedBrowse != null &&
           requestedBrowse >= 0 &&

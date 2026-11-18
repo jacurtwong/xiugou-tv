@@ -434,7 +434,11 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                       fontSize: AppType.label,
                       fontWeight: FontWeight.bold)),
               const SizedBox(width: 10),
-              Text('共 ${nav.episodes.length} 集 · ${nav.lineName ?? ''}',
+              Text(
+                  nav.episodes.length <= 1
+                      // 单片没有"选集"可言，这里主要用来换源。
+                      ? '单片 · ${nav.lineName ?? ''}'
+                      : '共 ${nav.episodes.length} 集 · ${nav.lineName ?? ''}',
                   style: TextStyle(
                       color: ink.withValues(alpha: 0.55),
                       fontSize: AppType.caption)),
