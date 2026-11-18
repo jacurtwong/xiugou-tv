@@ -19,6 +19,7 @@ import '../../theme/app_palette.dart';
 import '../../theme/app_tokens.dart';
 import '../keyboard/player_shortcuts.dart';
 import 'danmaku_layer.dart';
+import 'ad_debug_panel.dart';
 import 'danmaku_settings_panel.dart';
 import 'episode_drawer.dart';
 import 'playback_preparing_overlay.dart';
@@ -495,6 +496,9 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
 
   bool _showControls = true;
   Timer? _hideControlsTimer;
+
+  /// §AD 「广告调试」面板（D 键开关）；只读展示本集剪辑结论。
+  bool _showAdDebug = false;
   static const Duration _hideDelay = Duration(seconds: 3);
 
   /// §37：指针是否停在顶 / 底控制条热区内。
@@ -1182,7 +1186,19 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
     _onUserActivity();
   }
 
+  /// §AD 广告调试面板开关（默认 D 键）。给一条 OSD 提示，避免"按了没反应"。
+  void _toggleAdDebug() {
+    setState(() => _showAdDebug = !_showAdDebug);
+    _osdController.show(Icons.bug_report_outlined,
+        _showAdDebug ? '广告调试' : '已关闭广告调试');
+  }
+
   void _handleExit() {
+    // §AD 调试面板最优先：Esc 先收面板，再走原有的退出链路。
+    if (_showAdDebug) {
+      setState(() => _showAdDebug = false);
+      return;
+    }
     // §39：准备态（解析中 / 失败）优先取消，Esc 与返回键随时可用。
     if (widget.preparing != null) {
       final cancel = widget.onCancelPrepare;
@@ -1384,6 +1400,8 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
               onInvoke: (_) => _handleNextEpisode()),
           ToggleDanmakuIntent: CallbackAction<ToggleDanmakuIntent>(
               onInvoke: (_) => _handleToggleDanmaku()),
+          ToggleAdDebugIntent: CallbackAction<ToggleAdDebugIntent>(
+              onInvoke: (_) => _toggleAdDebug()),
         },
         child: Focus(
           focusNode: _focusNode,
@@ -1759,6 +1777,17 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
                   ),
                   ),
                 ),
+
+                // 7.5 §AD 广告调试面板（D 键）：浮在右上角，不挡控制条与选集抽屉。
+                if (_showAdDebug)
+                  Positioned(
+                    top: 56,
+                    right: 16,
+                    child: AdDebugPanel(
+                      engine: widget.playerEngine,
+                      onClose: _toggleAdDebug,
+                    ),
+                  ),
 
                 // 8. 起播准备态（§16）：解析地址期间盖在最上层。
                 //    没有它时，弱网下点选集要干等几秒才进播放页。

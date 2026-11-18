@@ -16,33 +16,51 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'ad_filter_debug.dart';
 import 'hls_ad_filter.dart';
 import 'hls_playlist_probe.dart';
 
-/// 一次过滤的结果。
+/// 一次过滤的结果（`url` 就是交给播放器的本地地址）。
 class HlsAdFilterResult {
   const HlsAdFilterResult({
     required this.url,
-    required this.cutCount,
-    required this.removedSeconds,
     required this.fromMaster,
-    this.cuts = const [],
+    this.cut,
+    this.analysis,
   });
 
   /// 交给播放器的本地地址（`http://127.0.0.1:<port>/p/<token>.m3u8`）。
   final String url;
 
-  /// 本档实际剪掉的广告段数（主列表在首跳时为 0，真正剪辑发生在变体请求时）。
-  final int cutCount;
-
-  /// 剪掉的总秒数。
-  final double removedSeconds;
-
   /// 是否经过 master 列表转发。
   final bool fromMaster;
 
-  /// 被剪掉的区间（**原始时间轴**，升序）；续播点要靠它换算。
-  final List<HlsAdCut> cuts;
+  /// 本档的剪后列表（主列表首跳时为 null，真正裁剪发生在变体请求时）。
+  final HlsCutPlaylist? cut;
+
+  /// 本档的分析结果（调试面板用）。
+  final HlsAdAnalysis? analysis;
+
+  int get cutCount => cut?.cuts.length ?? 0;
+
+  double get removedSeconds => cut?.removedSeconds ?? 0;
+
+  List<HlsAdCut> get cuts => cut?.cuts ?? const [];
+}
+
+/// 一次「要不要剪辑」的尝试结论。
+///
+/// **永远有值**：即使不剪也要带原因，播放器的「广告调试」面板靠它解释
+/// 「为什么这一集没剪」——返回 null 的接口做不到这件事。
+class HlsAdFilterAttempt {
+  const HlsAdFilterAttempt(this.outcome, {this.result, this.reason});
+
+  final AdFilterOutcome outcome;
+  final HlsAdFilterResult? result;
+  final String? reason;
+
+  /// 非空表示调用方应改用本地地址。
+  String? get url => result?.url;
 }
 
 class _Entry {
@@ -97,37 +115,66 @@ class HlsAdFilterProxy {
 
   /// 尝试把 [url] 换成「已剪掉插播广告」的本地播放列表地址。
   ///
-  /// 返回 `null` 表示不需要 / 不能过滤（非 HLS、直播、没有广告、拉取失败……），
-  /// 调用方必须原样使用 [url]。
-  Future<HlsAdFilterResult?> filter(
+  /// 返回值永远非空：`url` 非空时调用方应使用它，否则按原地址播放。
+  /// 不剪辑的原因写进 [HlsAdFilterAttempt.reason]，供调试面板展示。
+  Future<HlsAdFilterAttempt> filter(
     String url,
     Map<String, String> headers,
   ) async {
-    if (_closed) return null;
     final uri = Uri.tryParse(url);
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
-      return null;
+      return const HlsAdFilterAttempt(AdFilterOutcome.notHls);
+    }
+    if (_closed) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.unavailable,
+          reason: '本地代理已关闭');
     }
     // 只看自己的地址：局域网 / 本机 HLS 源照常过滤，但绝不把自己的播放列表再喂回来。
-    if (_isLoopback(uri) && uri.port == (_server?.port ?? -1)) return null;
+    if (_isLoopback(uri) && uri.port == (_server?.port ?? -1)) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.unavailable,
+          reason: '目标地址就是本地代理本身');
+    }
 
     final HlsFetchResponse response;
     try {
       response = await _fetch(uri, headers, fetchBudget);
-    } catch (_) {
-      return null;
+    } catch (error) {
+      return HlsAdFilterAttempt(AdFilterOutcome.unavailable,
+          reason: '清单请求失败：$error');
     }
     final text = response.content;
-    if (text.isEmpty) return null;
+    if (text.isEmpty) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.unavailable,
+          reason: '清单内容为空');
+    }
 
     if (isMasterPlaylistText(text)) {
       return _filterMaster(text, response.uri, headers);
     }
-    if (!isMediaPlaylistText(text)) return null;
+    if (!isMediaPlaylistText(text)) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.noAds,
+          reason: '返回的不是媒体播放列表（可能是网页或跳转页）');
+    }
 
     final absolute = absolutizePlaylist(text, response.uri);
-    final cut = _cutMediaPlaylist(absolute);
-    if (cut == null) return null;
+    // 直播（无 ENDLIST）与字节范围列表都不碰：剪了必坏。
+    if (!hasEndListText(absolute)) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.live);
+    }
+    if (hasByteRangeText(absolute)) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.byteRange);
+    }
+
+    final analysis = analyzeAdBlocks(absolute);
+    if (!analysis.hasAds) {
+      return HlsAdFilterAttempt(AdFilterOutcome.noAds,
+          reason: analysis.rejected ? '命中过多，判定为整集切片，已放弃' : null);
+    }
+    final cut = buildCutPlaylist(absolute, analysis);
+    if (cut.cuts.isEmpty) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.noAds,
+          reason: '二次护栏判定没有可安全删除的块');
+    }
 
     final token = _newToken();
     _entries[token] = _Entry.body(
@@ -136,36 +183,36 @@ class HlsAdFilterProxy {
     );
     _prune();
     final base = await _ensureServer();
-    if (base == null) return null;
-    return HlsAdFilterResult(
-      url: '$base/p/$token.m3u8',
-      cutCount: cut.cuts.length,
-      removedSeconds: cut.removedSeconds,
-      fromMaster: false,
-      cuts: cut.cuts,
+    if (base == null) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.unavailable,
+          reason: '本地代理端口绑定失败');
+    }
+    return HlsAdFilterAttempt(
+      AdFilterOutcome.filtered,
+      result: HlsAdFilterResult(
+        url: '$base/p/$token.m3u8',
+        fromMaster: false,
+        cut: cut,
+        analysis: analysis,
+      ),
     );
   }
 
-  HlsCutPlaylist? _cutMediaPlaylist(String absolute) {
-    // 直播（无 ENDLIST）与字节范围列表都不碰：剪了必坏。
-    if (!hasEndListText(absolute)) return null;
-    if (hasByteRangeText(absolute)) return null;
-    final analysis = analyzeAdBlocks(absolute);
-    if (!analysis.hasAds) return null;
-    final cut = buildCutPlaylist(absolute, analysis);
-    if (cut.cuts.isEmpty) return null;
-    return cut;
-  }
-
-  Future<HlsAdFilterResult?> _filterMaster(
+  Future<HlsAdFilterAttempt> _filterMaster(
     String text,
     Uri base,
     Map<String, String> headers,
   ) async {
     final variants = masterVariantUris(text, base);
-    if (variants.isEmpty) return null;
+    if (variants.isEmpty) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.noAds,
+          reason: '主列表里没有可用的变体');
+    }
     final localBase = await _ensureServer();
-    if (localBase == null) return null;
+    if (localBase == null) {
+      return const HlsAdFilterAttempt(AdFilterOutcome.unavailable,
+          reason: '本地代理端口绑定失败');
+    }
 
     final master = rewriteMasterVariants(text, base, (variant, index) {
       final token = _newToken();
@@ -179,11 +226,13 @@ class HlsAdFilterProxy {
       contentType: 'application/vnd.apple.mpegurl',
     );
     _prune();
-    return HlsAdFilterResult(
-      url: '$localBase/p/$token.m3u8',
-      cutCount: 0,
-      removedSeconds: 0,
-      fromMaster: true,
+    return HlsAdFilterAttempt(
+      AdFilterOutcome.master,
+      result: HlsAdFilterResult(
+        url: '$localBase/p/$token.m3u8',
+        fromMaster: true,
+      ),
+      reason: '主列表已转发，裁剪发生在播放器选中的那一档',
     );
   }
 
@@ -202,8 +251,14 @@ class HlsAdFilterProxy {
     final text = response.content;
     if (!isMediaPlaylistText(text)) return null;
     final absolute = absolutizePlaylist(text, response.uri);
-    final cut = _cutMediaPlaylist(absolute);
-    final body = cut?.playlist ?? absolute;
+    String body = absolute;
+    if (hasEndListText(absolute) && !hasByteRangeText(absolute)) {
+      final analysis = analyzeAdBlocks(absolute);
+      if (analysis.hasAds) {
+        final cut = buildCutPlaylist(absolute, analysis);
+        if (cut.cuts.isNotEmpty) body = cut.playlist;
+      }
+    }
     entry.body = body;
     return body;
   }

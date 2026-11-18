@@ -14,7 +14,8 @@ enum PlayerShortcutAction {
   rateReset('恢复 1 倍速'),
   previousEpisode('上一集'),
   nextEpisode('下一集'),
-  toggleDanmaku('显示 / 隐藏弹幕');
+  toggleDanmaku('显示 / 隐藏弹幕'),
+  adDebug('广告调试面板（剪辑结果）');
 
   final String label;
   const PlayerShortcutAction(this.label);
@@ -156,7 +157,9 @@ class PlayerShortcutBindings {
     PlayerShortcutAction.rateReset: [PlayerKeyBinding('keyZ')],
     PlayerShortcutAction.previousEpisode: [PlayerKeyBinding('pageUp')],
     PlayerShortcutAction.nextEpisode: [PlayerKeyBinding('pageDown')],
-    PlayerShortcutAction.toggleDanmaku: [PlayerKeyBinding('keyD')],
+    PlayerShortcutAction.toggleDanmaku: [PlayerKeyBinding('keyB')],
+    // 2026-11-18：D 让给「广告调试」（与 KimBoxPC 一致），弹幕默认改到 B。
+    PlayerShortcutAction.adDebug: [PlayerKeyBinding('keyD')],
   });
 
   List<PlayerKeyBinding> keysFor(PlayerShortcutAction action) =>

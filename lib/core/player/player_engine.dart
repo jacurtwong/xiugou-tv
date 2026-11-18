@@ -1,4 +1,8 @@
 import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import 'ad_filter_debug.dart';
 import 'models/player_settings.dart';
 import 'models/player_state.dart';
 import 'models/track_info.dart';
@@ -72,4 +76,9 @@ abstract class PlayerEngine {
   Stream<String?> get errorStream;
   Stream<List<TrackInfo>> get audioTracksStream;
   Stream<List<TrackInfo>> get subtitleTracksStream;
+
+  /// 本集「广告剪辑」的结论；换集 / 重新起播会覆盖，没有结论时为 null。
+  ///
+  /// 播放器的「广告调试」面板（D 键）读这个值解释「剪了几段 / 为什么没剪」。
+  ValueListenable<AdFilterDebugInfo?> get adFilterDebug;
 }

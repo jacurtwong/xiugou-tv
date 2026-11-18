@@ -4,7 +4,7 @@
 
 | 功能 | 依赖的服务 | 没配置时 |
 | --- | --- | --- |
-| 点播弹幕 | 自部署的 [LogVar Danmu API](https://github.com/qfw66/danmu_api) | 播放页没有弹幕按钮 / 弹幕设置 / `D` 键，设置页没有「弹幕」分组，不发任何请求 |
+| 点播弹幕 | 自部署的 [LogVar Danmu API](https://github.com/qfw66/danmu_api) | 播放页没有弹幕按钮 / 弹幕设置 / `B` 键（默认键位，可在「播放器快捷键」里改），设置页没有「弹幕」分组，不发任何请求 |
 | 共享跳过片段 | 本仓库的 Cloudflare Worker：[`server/segments-worker/`](server/segments-worker/README.md) | 播放页没有「片段」按钮，时间轴上不显示片段色块 |
 
 这两项服务的地址与令牌**不在仓库里**。
