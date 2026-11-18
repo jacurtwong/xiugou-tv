@@ -108,6 +108,8 @@ class PlayerSourceCandidatesNav {
     required this.state,
     required this.onEnsure,
     required this.onSelect,
+    this.switchStatus,
+    this.switchNotice,
   });
 
   /// 搜索结果（已按延迟升序）；宿主重建时随 nav 一起更新。
@@ -118,6 +120,12 @@ class PlayerSourceCandidatesNav {
 
   /// 点某个来源：直接切过去（不重新搜索）。
   final ValueChanged<CrossSiteCandidate> onSelect;
+
+  /// 换源进行中的状态文案（「正在解析 X…」「正在启动 X…」）；空闲为 null。
+  final String? switchStatus;
+
+  /// 最近一条换源提示（成功是「已换到…」）；用来决定弹窗要不要自动收起。
+  final String? switchNotice;
 }
 
 /// 播放页右侧「选集 + 线路」抽屉（§20）。

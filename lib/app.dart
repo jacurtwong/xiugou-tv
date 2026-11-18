@@ -2118,6 +2118,8 @@ PlayerEpisodeListNav? _buildEpisodeListNav(
     currentEpisodeName: session.episodes[session.index].name,
     sourceCandidates: PlayerSourceCandidatesNav(
       state: ref.watch(sourceCandidatesProvider),
+      switchStatus: ref.watch(playbackSourceChangeProvider)?.statusText,
+      switchNotice: ref.watch(lineSwitchNoticeProvider),
       onEnsure: (key) =>
           unawaited(ref.read(sourceCandidatesProvider.notifier).ensure(key)),
       onSelect: (candidate) => _handleSourceCandidatePick(

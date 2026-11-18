@@ -35,6 +35,9 @@ class PlayerEpisodeDialogLayer extends StatefulWidget {
 }
 
 class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
+  /// 用户刚点下的来源（`sourceCandidateKey`）：在宿主状态回来之前先给一次即时反馈。
+  String? _pendingKey;
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +48,22 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
   void didUpdateWidget(covariant PlayerEpisodeDialogLayer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.open && !oldWidget.open) _ensureCandidates();
+    final wasSwitching = oldWidget.nav?.sourceCandidates?.switchStatus != null;
+    final nowSwitching = widget.nav?.sourceCandidates?.switchStatus != null;
+    if (wasSwitching && !nowSwitching && _pendingKey != null) {
+      // 换源结束：成功（提示以「已换到」开头）就收起弹窗，失败则留在原地让用户重选。
+      final notice = widget.nav?.sourceCandidates?.switchNotice ?? '';
+      final succeeded = notice.startsWith('已换到');
+      setState(() => _pendingKey = null);
+      if (succeeded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && widget.open) widget.onClose();
+        });
+      }
+    }
+    if (!widget.open && _pendingKey != null) {
+      _pendingKey = null;
+    }
   }
 
   /// 打开即自动跨站搜「其他来源」：同一集搜过会复用结果，不会重复等。
@@ -215,10 +234,46 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                 ] else
                   _hint(palette, state.message ?? '没有找到其他来源'),
               ],
+              // 换源进行中的可见反馈：宿主把「正在解析 X… / 正在启动 X…」写进 switchStatus。
+              if (candidatesNav?.switchStatus != null) ...[
+                const SizedBox(height: 6),
+                _switchingBanner(palette, candidatesNav!.switchStatus!),
+              ],
             ],
           ),
         ),
       ],
+    );
+  }
+
+  /// 换源进度条：点了之后立刻有东西在动，不用猜是不是没点上。
+  Widget _switchingBanner(AppPalette palette, String status) {
+    final ink = palette.playerText;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(4, 4, 4, 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: palette.accentInk.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadii.sm),
+        border: Border.all(color: palette.accentInk.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(
+            width: 12,
+            height: 12,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(status,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: ink, fontSize: AppType.caption, height: 1.3)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -275,11 +330,25 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
       title: '${candidate.site.name} · ${candidate.source.name}',
       subtitle: '${currentEpisodeName.isEmpty ? candidate.episodeName : currentEpisodeName}'
           '${candidate.confidence == CrossSiteConfidence.high ? '' : ' · 请确认'}',
-      trailing: trailing,
-      trailingColor: trailingColor,
-      dim: probe?.ok == false,
-      onTap: () => candidatesNav.onSelect(candidate),
+      trailing: _pendingKey == sourceCandidateKey(candidate)
+          ? '切换中…'
+          : trailing,
+      // 正在切的那一行用强调色，其余行在有换源任务时置灰（点了也没用）。
+      trailingColor: _pendingKey == sourceCandidateKey(candidate)
+          ? palette.accentInk
+          : trailingColor,
+      dim: probe?.ok == false || candidatesNav.switchStatus != null,
+      enabled: candidatesNav.switchStatus == null,
+      onTap: () => _onSelectCandidate(candidatesNav, candidate),
     );
+  }
+
+  /// 点来源：先本地标记「切换中…」给出即时反馈，再交给宿主换源。
+  void _onSelectCandidate(
+      PlayerSourceCandidatesNav candidatesNav, CrossSiteCandidate candidate) {
+    if (candidatesNav.switchStatus != null) return;
+    setState(() => _pendingKey = sourceCandidateKey(candidate));
+    candidatesNav.onSelect(candidate);
   }
 
   Widget _sourceRow(
