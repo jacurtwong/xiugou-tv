@@ -23,6 +23,7 @@ import 'ad_debug_panel.dart';
 import 'playback_info_osd.dart';
 import 'danmaku_settings_panel.dart';
 import 'episode_drawer.dart';
+import 'player_episode_dialog.dart';
 import 'playback_preparing_overlay.dart';
 import '../widgets/focus_ring.dart';
 import '../widgets/live_indicator.dart';
@@ -1341,7 +1342,9 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
   Widget _wrapEpisodeLayer(Widget surface) {
     final nav = widget.episodeListNav;
     if (nav == null) return surface;
-    return EpisodeDrawerLayer(
+    // 2026-11-18：选集从右侧抽屉改为**画面居中的弹窗**（左侧播放源 / 右侧选集网格），
+    // 与详情页「选集播放」同一套布局，换源与换集在一屏内完成。
+    return PlayerEpisodeDialogLayer(
       open: _episodeDrawerOpen,
       nav: nav,
       onClose: _closeEpisodeDrawer,
