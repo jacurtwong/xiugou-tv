@@ -12,7 +12,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-0078D4" alt="平台">
-  <img src="https://img.shields.io/badge/版本-1.4.1-2ea44f" alt="版本">
+  <img src="https://img.shields.io/badge/版本-1.5.0-2ea44f" alt="版本">
   <img src="https://img.shields.io/badge/许可证-GPL--3.0-blue" alt="许可证">
   <a href="https://t.me/+Z-8NGECyhdkzMDVl" target="_blank">
     <img src="https://img.shields.io/badge/TG群组-点击加入-blue" alt="TG">
@@ -62,6 +62,7 @@
 - libmpv 内核，支持 D3D11VA、D3D11VA（拷回模式）、DXVA2 硬件解码，并显示硬解状态。
 - 倍速 0.5–3.0，可调音量与画面缩放。
 - 视频轨、音轨、字幕轨切换，支持关闭字幕。
+- 播放失败自动换线，也可手动切线路；控制条「换源」可一键跨站找同一部片的其他来源。
 - 片头 / 片尾跳过，按毫秒精确配置。
 - 插播广告自动剪辑：起播前把被 discontinuity 夹住的贴片广告整段剪掉（播放器设置里可关）。
 - 按 `D` 打开「广告调试」面板，查看本集剪了几段、每段起止，以及没剪的原因；`Esc` 关闭。

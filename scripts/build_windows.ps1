@@ -372,6 +372,13 @@ if (-not $SkipZip) {
 # 5. Generate Inno Setup Installer
 if (-not $SkipInstaller) {
     Write-Host "[5/5] Checking Inno Setup compiler (ISCC.exe)..." -ForegroundColor Yellow
+    # installer.iss 里有中文 AppName：Inno Setup 只认「UTF-8 带 BOM」，缺 BOM 会按 ANSI 解析成乱码。
+    # 这里先拦一道，免得把乱码安装包发出去。
+    $IssPath = Join-Path $ScriptDir "installer.iss"
+    $IssHead = [System.IO.File]::ReadAllBytes($IssPath)
+    if (-not ($IssHead.Length -ge 3 -and $IssHead[0] -eq 0xEF -and $IssHead[1] -eq 0xBB -and $IssHead[2] -eq 0xBF)) {
+        throw "scripts/installer.iss 缺少 UTF-8 BOM：Inno Setup 会把中文 AppName 读成乱码。请以 UTF-8 with BOM 保存后重试。"
+    }
     $IsccCandidates = @(
         "ISCC.exe",
         "${env:ProgramFiles(x86)}/Inno Setup 6/ISCC.exe",
