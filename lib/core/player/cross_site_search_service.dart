@@ -168,7 +168,11 @@ class CrossSiteSearchService {
           currentSiteKey: currentSiteKey,
           visitedSiteKeys: visited,
         );
-        if (candidate != null) candidates.add(candidate);
+        if (candidate != null) {
+          // 延迟 = 该站搜索返回耗时 + 详情探测耗时；选集抽屉按它升序展示。
+          candidates.add(
+              candidate.withLatency(hit.elapsedMs + outcome.elapsedMs));
+        }
       }
       final status = cancelToken.isCancelled
           ? CrossSiteSearchStatus.cancelled
@@ -285,6 +289,7 @@ class CrossSiteSearchService {
               configIndex: configIndices[site.key]!,
               score: score,
               order: previous?.order ?? order++,
+              elapsedMs: stopwatch.elapsedMilliseconds,
             );
           }
         },
@@ -321,8 +326,13 @@ class CrossSiteSearchService {
       stopwatch.stop();
       // Futures can run before an overdue timer when the event loop was busy.
       completion.complete(stopwatch.elapsed >= detailTimeout
-          ? const _DetailOutcome(timedOut: true)
-          : outcome);
+          ? _DetailOutcome(
+              timedOut: true, elapsedMs: stopwatch.elapsedMilliseconds)
+          : _DetailOutcome(
+              detail: outcome.detail,
+              timedOut: outcome.timedOut,
+              failed: outcome.failed,
+              elapsedMs: stopwatch.elapsedMilliseconds));
     }
 
     timer = Timer(detailTimeout, () {
@@ -377,6 +387,7 @@ class _SearchHit {
     required this.configIndex,
     required this.score,
     required this.order,
+    this.elapsedMs = 0,
   });
 
   final Site site;
@@ -384,6 +395,9 @@ class _SearchHit {
   final int configIndex;
   final int score;
   final int order;
+
+  /// 从开始搜索到该站结果抵达的毫秒数（≈该站搜索延迟）。
+  final int elapsedMs;
 }
 
 class _SearchCollection {
@@ -400,9 +414,15 @@ class _SearchCollection {
 
 class _DetailOutcome {
   const _DetailOutcome(
-      {this.detail, this.timedOut = false, this.failed = false});
+      {this.detail,
+      this.timedOut = false,
+      this.failed = false,
+      this.elapsedMs = 0});
 
   final VodDetail? detail;
   final bool timedOut;
   final bool failed;
+
+  /// 详情探测耗时（毫秒），与搜索耗时相加后作为该来源的延迟。
+  final int elapsedMs;
 }

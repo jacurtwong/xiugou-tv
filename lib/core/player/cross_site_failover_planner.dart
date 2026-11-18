@@ -185,6 +185,7 @@ class CrossSiteCandidate {
     required this.identity,
     required this.evidence,
     required this.netdisk,
+    this.latencyMs = 0,
   });
 
   final Site site;
@@ -210,6 +211,27 @@ class CrossSiteCandidate {
 
   bool get isSameName =>
       episodeMatch.kind == CrossSiteEpisodeMatchKind.sameName;
+
+  /// 这个来源从「开始搜索」到「拿到可用详情」花了多少毫秒（0 = 未测）。
+  ///
+  /// 选集抽屉里的「其他来源」按它升序排列——用户要的是「哪个源响应快」，
+  /// 不是匹配度；匹配度仍由 [score] 负责（换源对话框按分数排序）。
+  final int latencyMs;
+
+  /// 附带延迟的副本（延迟由搜索服务在探测时测得）。
+  CrossSiteCandidate withLatency(int milliseconds) => CrossSiteCandidate(
+        site: site,
+        detail: detail,
+        item: item,
+        configIndex: configIndex,
+        sourceIndex: sourceIndex,
+        source: source,
+        episodeMatch: episodeMatch,
+        identity: identity,
+        evidence: evidence,
+        netdisk: netdisk,
+        latencyMs: milliseconds < 0 ? 0 : milliseconds,
+      );
 }
 
 /// 把标题转成「基础片名 + 季号 + 特别篇」。

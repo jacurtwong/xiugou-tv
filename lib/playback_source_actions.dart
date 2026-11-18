@@ -34,9 +34,105 @@ final switchLiveLineProvider = Provider<Future<void> Function(int)>(
 typedef PlaybackSourceChooser = Future<CrossSiteCandidate?> Function(
     List<CrossSiteCandidate> candidates);
 
-final switchPlaybackSourceProvider =
-    Provider<Future<void> Function(PlaybackSourceChooser)>(
-        (ref) => (choose) => _switchPlaybackSource(ref, choose));
+final switchPlaybackSourceProvider = Provider<
+    Future<void> Function(PlaybackSourceChooser,
+        {CrossSiteCandidate? preselect})>((ref) => (choose, {preselect}) =>
+    _switchPlaybackSource(ref, choose, preselect: preselect));
+
+/// 直接切到某个已知候选（选集抽屉「其他来源」点击时用）：不重新搜索。
+final switchToSourceCandidateProvider =
+    Provider<Future<void> Function(CrossSiteCandidate)>((ref) => (candidate) =>
+        _switchPlaybackSource(ref, (_) async => null, preselect: candidate));
+
+/// 选集抽屉「其他来源」的自动搜索控制器。
+///
+/// 抽屉每次打开调用 [SourceCandidatesController.ensure]：同一集已经搜过就复用结果，
+/// 换集或手动刷新才重新搜。结果按延迟升序，供抽屉直接展示。
+class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
+  SourceCandidatesController(this._ref) : super(const SourceCandidatesState());
+
+  final Ref _ref;
+  SearchCancelToken? _token;
+  String? _inFlightKey;
+
+  @override
+  void dispose() {
+    _token?.cancel();
+    super.dispose();
+  }
+
+  /// 抽屉打开时调用：同一集搜过就不再打扰站点。
+  Future<void> ensure(String episodeKey) async {
+    if (_inFlightKey == episodeKey) return;
+    if (state.searched && state.episodeKey == episodeKey) return;
+    await refresh(episodeKey);
+  }
+
+  Future<void> refresh(String episodeKey) async {
+    _token?.cancel();
+    final token = SearchCancelToken();
+    _token = token;
+    _inFlightKey = episodeKey;
+    state = SourceCandidatesState(searching: true, episodeKey: episodeKey);
+
+    final session = _sourceSearchContext(_ref);
+    if (session == null || session.site == null || session.episodes.isEmpty) {
+      _inFlightKey = null;
+      state = SourceCandidatesState(
+        searched: true,
+        episodeKey: episodeKey,
+        message: '当前会话不支持跨站换源',
+      );
+      return;
+    }
+
+    var message = '';
+    try {
+      final result = await CrossSiteSearchService(
+              searchEngine: _ref.read(searchEngineProvider),
+              siteApi: _ref.read(siteApiProvider))
+          .search(
+        target: CrossSiteTarget(
+          item: session.item,
+          episodeName: session.episodes[session.index].name,
+          episodeCount: session.episodes.length,
+          siteKey: session.site!.key,
+        ),
+        sites: _ref.read(configRepositoryProvider).currentVodConfig.sites,
+        cancelToken: token,
+      );
+      if (!identical(_token, token) || token.isCancelled) return;
+      final sorted = sortCandidatesByLatency(result.candidates);
+      message = sorted.isNotEmpty
+          ? ''
+          : switch (result.status) {
+              CrossSiteSearchStatus.timedOut => '搜索超时，请稍后重试',
+              CrossSiteSearchStatus.failed => '站点查找失败',
+              CrossSiteSearchStatus.cancelled => '',
+              CrossSiteSearchStatus.completed => '没有找到可信的同片同集',
+            };
+      state = SourceCandidatesState(
+        searched: true,
+        candidates: sorted,
+        episodeKey: episodeKey,
+        message: message.isEmpty ? null : message,
+      );
+    } catch (_) {
+      if (!identical(_token, token) || token.isCancelled) return;
+      state = SourceCandidatesState(
+        searched: true,
+        episodeKey: episodeKey,
+        message: '站点查找失败',
+      );
+    } finally {
+      if (identical(_token, token)) _inFlightKey = null;
+    }
+  }
+}
+
+final sourceCandidatesProvider =
+    StateNotifierProvider<SourceCandidatesController, SourceCandidatesState>(
+        (ref) => SourceCandidatesController(ref));
 
 bool _sourceChangeBlocked(Ref ref) =>
     ref.read(playbackSourceChangeProvider) != null ||
@@ -413,7 +509,10 @@ PlaybackSession? _sourceSearchContext(Ref ref) {
 }
 
 Future<void> _switchPlaybackSource(
-    Ref ref, PlaybackSourceChooser choose) async {
+  Ref ref,
+  PlaybackSourceChooser choose, {
+  CrossSiteCandidate? preselect,
+}) async {
   if (_sourceChangeBlocked(ref)) return;
   final session = _sourceSearchContext(ref);
   if (session == null ||
@@ -428,41 +527,46 @@ Future<void> _switchPlaybackSource(
   _SourcePlaybackSnapshot? snapshot;
   var opened = false;
   try {
-    owner.status('正在其他站点查找同片同集…');
-    final result = await CrossSiteSearchService(
-            searchEngine: ref.read(searchEngineProvider),
-            siteApi: ref.read(siteApiProvider))
-        .search(
-            target: CrossSiteTarget(
-                item: session.item,
-                episodeName: session.episodes[session.index].name,
-                episodeCount: session.episodes.length,
-                siteKey: session.site!.key),
-            sites: owner.config.sites,
-            cancelToken: owner.cancelToken);
-    if (!owner.isCurrent) return;
-    final candidates = result.candidates;
-    if (candidates.isEmpty) {
-      ref.read(lineSwitchNoticeProvider.notifier).state =
-          result.status == CrossSiteSearchStatus.timedOut
-              ? '查找超时，当前播放已保留，请稍后重试'
-              : result.status == CrossSiteSearchStatus.failed
-                  ? '站点查找失败，当前播放已保留'
-                  : '没有找到可信的同片同集，当前播放已保留';
-      return;
-    }
-    CrossSiteCandidate? candidate;
-    if (candidates.length == 1 &&
-        candidates.single.confidence == CrossSiteConfidence.high) {
-      candidate = candidates.single;
+    // 选集抽屉点了某个已知来源时直接用它，省掉一次跨站搜索。
+    CrossSiteCandidate? candidate = preselect;
+    if (candidate == null) {
+      owner.status('正在其他站点查找同片同集…');
+      final result = await CrossSiteSearchService(
+              searchEngine: ref.read(searchEngineProvider),
+              siteApi: ref.read(siteApiProvider))
+          .search(
+              target: CrossSiteTarget(
+                  item: session.item,
+                  episodeName: session.episodes[session.index].name,
+                  episodeCount: session.episodes.length,
+                  siteKey: session.site!.key),
+              sites: owner.config.sites,
+              cancelToken: owner.cancelToken);
+      if (!owner.isCurrent) return;
+      final candidates = result.candidates;
+      if (candidates.isEmpty) {
+        ref.read(lineSwitchNoticeProvider.notifier).state =
+            result.status == CrossSiteSearchStatus.timedOut
+                ? '查找超时，当前播放已保留，请稍后重试'
+                : result.status == CrossSiteSearchStatus.failed
+                    ? '站点查找失败，当前播放已保留'
+                    : '没有找到可信的同片同集，当前播放已保留';
+        return;
+      }
+      if (candidates.length == 1 &&
+          candidates.single.confidence == CrossSiteConfidence.high) {
+        candidate = candidates.single;
+      } else {
+        owner.status('请选择播放来源');
+        // Cancellation does not wait for an unanswered dialog.
+        final cancelled = Completer<CrossSiteCandidate?>();
+        owner.cancelToken.onCancel(() {
+          if (!cancelled.isCompleted) cancelled.complete(null);
+        });
+        candidate = await Future.any([choose(candidates), cancelled.future]);
+      }
     } else {
-      owner.status('请选择播放来源');
-      // Cancellation does not wait for an unanswered dialog.
-      final cancelled = Completer<CrossSiteCandidate?>();
-      owner.cancelToken.onCancel(() {
-        if (!cancelled.isCompleted) cancelled.complete(null);
-      });
-      candidate = await Future.any([choose(candidates), cancelled.future]);
+      owner.status('正在切换来源…');
     }
     if (!owner.isCurrent || candidate == null) return;
     owner.status('正在解析${candidate.site.name}…');
@@ -554,6 +658,12 @@ Future<void> _switchPlaybackSource(
   } finally {
     owner.dispose();
   }
+}
+
+/// 选集抽屉「其他来源」点选：直接切到该候选（不再跨站搜索）。
+void _handleSourceCandidatePick(
+    BuildContext context, WidgetRef ref, CrossSiteCandidate candidate) {
+  unawaited(ref.read(switchToSourceCandidateProvider)(candidate));
 }
 
 Future<CrossSiteCandidate?> _choosePlaybackSource(BuildContext context,

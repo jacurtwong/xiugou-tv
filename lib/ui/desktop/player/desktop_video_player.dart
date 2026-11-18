@@ -1728,10 +1728,6 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
                                         // 倍速（HEAD 既有入口，文本本身承载当前值）
                                         _buildSpeedSelector(),
                                         if (_hasQualityChoices) _buildQualitySelector(),
-                                        // §SRC 播放源：一键跨站换源（与播放设置里的同一动作）
-                                        if (_canShowSourceActions &&
-                                            widget.sourceSwitchNav != null)
-                                          _buildSourceSwitchButton(),
                                         const Spacer(),
                                         // 片头 / 片尾快速标记（音量左侧）
                                         _buildSkipMarkerButtons(),
@@ -2121,43 +2117,6 @@ class _DesktopVideoPlayerState extends State<DesktopVideoPlayer> {
             overlayColor: _chromeInk.withValues(alpha: 0.12),
           ),
           child: Text(label,
-              style: const TextStyle(
-                  fontSize: AppType.body, fontWeight: FontWeight.bold)),
-        ),
-      ),
-    );
-  }
-
-  /// §SRC 控制条「换源」：一键跳去其他站点找同一部片的同一集。
-  ///
-  /// 走的是与「播放设置 → 换源继续播放」完全相同的动作（`PlayerSourceSwitchNav.onSearch`），
-  /// 只是把入口从抽屉里提到控制条上，省两次点击。查找期间按钮变「查找中」并禁用，
-  /// 结果由宿主弹「选择播放来源」对话框（取消查找也在宿主）。
-  Widget _buildSourceSwitchButton() {
-    final nav = widget.sourceSwitchNav;
-    if (nav == null || !_canShowSourceActions) return const SizedBox.shrink();
-    final busy = nav.busy;
-    final status = nav.statusText?.trim() ?? '';
-    final message = busy
-        ? '正在查找其他播放源…${status.isEmpty ? '' : '（$status）'}'
-        : '换源播放：在其他站点找同一部片的同一集';
-    return _buildBottomControlTooltip(
-      message: message,
-      child: FocusOutline(
-        radius: AppRadii.pill,
-        child: TextButton(
-          key: const ValueKey('player-source-switch'),
-          onPressed: nav.enabled && !busy ? nav.onSearch : null,
-          style: TextButton.styleFrom(
-            foregroundColor: _chromeInk,
-            disabledForegroundColor: _chromeInk.withValues(alpha: 0.45),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-            overlayColor: _chromeInk.withValues(alpha: 0.12),
-          ),
-          child: Text(busy ? '查找中' : '换源',
               style: const TextStyle(
                   fontSize: AppType.body, fontWeight: FontWeight.bold)),
         ),

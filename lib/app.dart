@@ -109,6 +109,7 @@ import 'ui/theme/app_tokens.dart';
 import 'ui/theme/app_theme.dart';
 import 'core/player/cross_site_failover_planner.dart';
 import 'core/player/cross_site_search_service.dart';
+import 'core/player/source_candidates.dart';
 import 'core/player/playback_source_loader.dart';
 import 'core/player/external_player_launcher.dart';
 
@@ -2110,6 +2111,15 @@ PlayerEpisodeListNav? _buildEpisodeListNav(
     lineName: browseSource.name,
     browsingPlayingLine: browsingPlayingLine,
     switching: session.switching || busy,
+    episodeKey:
+        '${session.site?.key ?? ''}::${session.episodes[session.index].name}',
+    sourceCandidates: PlayerSourceCandidatesNav(
+      state: ref.watch(sourceCandidatesProvider),
+      onEnsure: (key) =>
+          unawaited(ref.read(sourceCandidatesProvider.notifier).ensure(key)),
+      onSelect: (candidate) =>
+          _handleSourceCandidatePick(playerContext, ref, candidate),
+    ),
     onSelectEpisode: (index) => unawaited(
       browsingPlayingLine
           ? _handleEpisodeSwitch(playerContext, ref, index)

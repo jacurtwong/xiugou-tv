@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 
 import '../../theme/app_palette.dart';
 import '../../theme/app_tokens.dart';
+import '../../../core/player/cross_site_failover_planner.dart';
+import '../../../core/player/source_candidates.dart';
 import '../widgets/app_message.dart';
 import '../widgets/focus_ring.dart';
 import '../widgets/horizontal_scroll_area.dart';
@@ -77,6 +79,12 @@ class PlayerEpisodeListNav {
   /// 换线路回调：参数是 `PlaybackSession.sources` 的下标。
   final ValueChanged<int> onSelectLine;
 
+  /// 本集标识（`站点::集名`）：换集后「其他来源」的旧结果作废。
+  final String episodeKey;
+
+  /// 「其他来源」：自动跨站搜索 + 按延迟排序的候选列表（为空时不显示该区块）。
+  final PlayerSourceCandidatesNav? sourceCandidates;
+
   const PlayerEpisodeListNav({
     required this.episodes,
     required this.lines,
@@ -85,7 +93,27 @@ class PlayerEpisodeListNav {
     this.browsingPlayingLine = true,
     this.lineName,
     this.switching = false,
+    this.episodeKey = '',
+    this.sourceCandidates,
   });
+}
+
+/// 选集抽屉「其他来源」视图模型：状态由宿主的自动搜索控制器提供。
+class PlayerSourceCandidatesNav {
+  const PlayerSourceCandidatesNav({
+    required this.state,
+    required this.onEnsure,
+    required this.onSelect,
+  });
+
+  /// 搜索结果（已按延迟升序）；宿主重建时随 nav 一起更新。
+  final SourceCandidatesState state;
+
+  /// 抽屉打开 / 换集时调用：同一集搜过则复用，不会重复打扰站点。
+  final ValueChanged<String> onEnsure;
+
+  /// 点某个来源：直接切过去（不重新搜索）。
+  final ValueChanged<CrossSiteCandidate> onSelect;
 }
 
 /// 播放页右侧「选集 + 线路」抽屉（§20）。
@@ -152,6 +180,14 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
     _cursor = _currentIndex;
     _panelMounted = widget.open;
     if (widget.open) {
+      final candidatesNav = widget.nav?.sourceCandidates;
+      final episodeKey = widget.nav?.episodeKey ?? '';
+      if (candidatesNav != null && episodeKey.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !widget.open) return;
+          candidatesNav.onEnsure(episodeKey);
+        });
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !widget.open) return;
         _scrollToCursor(animate: false);
@@ -166,6 +202,15 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
     if (widget.open && !oldWidget.open) {
       _panelMounted = true;
       _cursor = _currentIndex;
+      // 打开抽屉即自动跨站搜「其他来源」：同一集搜过会直接复用结果。
+      final candidatesNav = widget.nav?.sourceCandidates;
+      final episodeKey = widget.nav?.episodeKey ?? '';
+      if (candidatesNav != null && episodeKey.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !widget.open) return;
+          candidatesNav.onEnsure(episodeKey);
+        });
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !widget.open) return;
         _scrollToCursor(animate: false);
@@ -432,6 +477,13 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
                 thickness: 1,
                 color: palette.playerText.withValues(alpha: 0.08),
               ),
+              if (nav.sourceCandidates != null)
+                _buildSourceCandidatesSection(context, nav, palette),
+              Divider(
+                height: 1,
+                thickness: 1,
+                color: palette.playerText.withValues(alpha: 0.08),
+              ),
               Expanded(
                 child: Opacity(
                   opacity: nav.switching ? 0.5 : 1,
@@ -454,6 +506,124 @@ class _EpisodeDrawerLayerState extends State<EpisodeDrawerLayer> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 抽屉顶部「其他来源」：自动跨站搜索、按延迟升序（用户 2026-11-18 口径）。
+  Widget _buildSourceCandidatesSection(BuildContext context,
+      PlayerEpisodeListNav nav, AppPalette palette) {
+    final sourceNav = nav.sourceCandidates!;
+    final state = sourceNav.state;
+    final ink = palette.playerText;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('其他来源',
+                  style: TextStyle(
+                      color: ink,
+                      fontSize: AppType.label,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _sourceStatusText(state),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: ink.withValues(alpha: 0.6),
+                      fontSize: AppType.caption),
+                ),
+              ),
+              IconButton(
+                tooltip: '重新搜索其他来源',
+                iconSize: 16,
+                visualDensity: VisualDensity.compact,
+                onPressed: state.searching
+                    ? null
+                    : () => sourceNav.onEnsure(nav.episodeKey),
+                icon: Icon(Icons.refresh_rounded, color: ink),
+              ),
+            ],
+          ),
+              if (state.hasCandidates)
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 156),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: state.candidates.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 2),
+                    itemBuilder: (context, index) => _buildSourceCandidateRow(
+                        context, palette, sourceNav, state.candidates[index]),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+
+  String _sourceStatusText(SourceCandidatesState state) {
+    if (state.searching) return '自动搜索中…';
+    if (state.hasCandidates) {
+      return '${state.candidates.length} 个来源 · 按延迟排序';
+    }
+    final message = state.message;
+    if (message != null && message.isNotEmpty) return message;
+    return state.searched ? '没有找到其他来源' : '打开时自动搜索';
+  }
+
+  Widget _buildSourceCandidateRow(BuildContext context, AppPalette palette,
+      PlayerSourceCandidatesNav sourceNav, CrossSiteCandidate candidate) {
+    final ink = palette.playerText;
+    final latency = candidate.latencyMs;
+    final latencyColor = latency <= 0
+        ? ink.withValues(alpha: 0.5)
+        : latency < 400
+            ? palette.success
+            : latency < 1200
+                ? ink.withValues(alpha: 0.75)
+                : palette.warning;
+    final title = '${candidate.site.name} · ${candidate.source.name}';
+    final subtitle = '${candidate.episodeName}'
+        '${candidate.confidence == CrossSiteConfidence.high ? '' : ' · 请确认同片同集'}';
+    return FocusRing(
+      onTap: () => sourceNav.onSelect(candidate),
+      borderRadius: const BorderRadius.all(Radius.circular(AppRadii.sm)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: ink, fontSize: AppType.body)),
+                  Text(subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: ink.withValues(alpha: 0.55),
+                          fontSize: AppType.caption)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(formatLatency(latency),
+                style: TextStyle(
+                    color: latencyColor,
+                    fontSize: AppType.caption,
+                    fontWeight: FontWeight.w600)),
+          ],
         ),
       ),
     );
