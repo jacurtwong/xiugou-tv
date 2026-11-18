@@ -187,14 +187,25 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
           )
           .timeout(const Duration(seconds: 6));
       watch.stop();
-      // 体检的 ms 用**首字节时间**（TTFB），比解析耗时更接近"点下去多久能出画面"；
-      // 探测没测出来（0）时 UI 显示「✓ 可用」，不编造数字。
-      final media = await _probeMediaUrl(spec.url, spec.headers ?? const {});
-      if (!media.ok) {
-        return SourceProbe(
-            ok: false, ms: media.ttfbMs, reason: media.reason ?? '不可播');
+      // 体检只量**网络时延**（TCP 建连 = ping 的等价物），不再用 HTTP 判"是不是网页"：
+      // 实测有的 CDN 对 HEAD 直接回 404/502（GET 才 200），据此判死会大面积误伤。
+      final uri = Uri.tryParse(spec.url);
+      if (uri == null || uri.host.isEmpty) {
+        return const SourceProbe(ok: false, ms: 0, reason: '地址无效');
       }
-      return SourceProbe(ok: true, ms: media.ttfbMs);
+      final port = uri.hasPort ? uri.port : (uri.scheme == 'https' ? 443 : 80);
+      final ping = Stopwatch()..start();
+      try {
+        final socket = await Socket.connect(uri.host, port,
+            timeout: const Duration(seconds: 3));
+        ping.stop();
+        socket.destroy();
+      } catch (error) {
+        ping.stop();
+        return SourceProbe(
+            ok: false, ms: ping.elapsedMilliseconds, reason: '无法连接');
+      }
+      return SourceProbe(ok: true, ms: ping.elapsedMilliseconds);
     } on TimeoutException {
       watch.stop();
       return SourceProbe(
@@ -623,20 +634,71 @@ String _shortFailure(Object error) {
   return text.isEmpty ? '未知错误' : text;
 }
 
-
 /// 一次媒体探测的结论：能不能播 + **首字节耗时**（TTFB）。
 ///
-/// [ttfbMs] 是「发请求 → 收到响应头」的时间，比解析耗时更接近"点下去多久能出画面"；
-/// 探测失败（超时 / 方法不支持 / 无 Content-Type）时返回 `ok: true, ttfbMs: 0`，
-/// 表示"没测出来"而不是"不能播"——绝不因为探测把能播的源拦掉。
+/// [ttfbMs] 是「发请求 → 收到响应头」的时间；探测失败（超时 / 方法不支持 /
+/// 没给 Content-Type）时返回 `ok: true, ttfbMs: 0`，表示"没测出来"而不是"不能播"。
 typedef _MediaProbe = ({bool ok, int ttfbMs, String? reason});
+
+/// 已知媒体后缀：这类地址只量首字节，不再用 Content-Type 判死。
+///
+/// CDN 对 HEAD 常回 403 错误页（`text/html`），1.9.3 就是据此把一堆能播的源
+/// 误判成「网页直链」的——直链本身已由后缀证明是媒体。
+bool _hasMediaExtension(String url) {
+  final path = Uri.tryParse(url)?.path.toLowerCase() ?? '';
+  const suffixes = [
+    '.m3u8', '.m3u', '.mp4', '.m4v', '.ts', '.flv',
+    '.mkv', '.webm', '.mov', '.mp3', '.m4a', '.aac', '.mpd',
+  ];
+  return suffixes.any(path.endsWith);
+}
+
+/// 探测用的请求头：站点自带的优先，缺 UA / Referer 时补浏览器默认值。
+///
+/// 很多 CDN 对没有 UA 的 HEAD 直接回 403 + HTML，坑就在这里。
+Map<String, String> _probeHeaders(Map<String, String>? headers, String url) =>
+    withBrowserHeaderFallbacks(headers, url, enabled: true) ??
+    const <String, String>{};
+
+/// 发一次探测请求并量首字节；失败返回 null（表示"没测出来"）。
+Future<({int ms, String mime, int status})?> _timedProbeRequest(
+  HttpClient client,
+  Uri uri,
+  Map<String, String> headers, {
+  required bool head,
+  required Stopwatch watch,
+}) async {
+  try {
+    final request = await (head ? client.headUrl(uri) : client.getUrl(uri))
+        .timeout(const Duration(seconds: 3));
+    headers.forEach(request.headers.set);
+    if (!head) {
+      request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
+    }
+    watch
+      ..reset()
+      ..start();
+    final response = await request.close().timeout(const Duration(seconds: 5));
+    watch.stop();
+    final mime = response.headers.contentType?.mimeType.toLowerCase() ?? '';
+    try {
+      await response.drain<void>();
+    } catch (_) {
+      // 丢弃响应体失败不影响结论。
+    }
+    return (ms: watch.elapsedMilliseconds, mime: mime, status: response.statusCode);
+  } catch (_) {
+    return null;
+  }
+}
 
 /// 检查地址是不是媒体，并顺便量一次首字节时间（TTFB）。
 ///
-/// 站点把「需要解析的网页」当直链返回时，mpv 会报 `Failed to recognize file format.`；
-/// 先用 HEAD 探 Content-Type（不支持就退回 GET + Range），是网页就让这条线路失败。
+/// **判定必须保守**：只有「HTTP 2xx 且 Content-Type 明确是 text/html」才算网页直链；
+/// 4xx/5xx、没有 Content-Type、请求失败一律按"未知"放行。误判会让能播的源被标 ✗，
+/// 换源时还会被跳过（1.9.3 的回归就是 HEAD 撞上 CDN 的 403 错误页）。
 Future<_MediaProbe> _probeMediaUrl(
-    String url, Map<String, String> headers) async {
+    String url, Map<String, String>? headers) async {
   final uri = Uri.tryParse(url);
   if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
     return (ok: true, ttfbMs: 0, reason: null);
@@ -647,43 +709,26 @@ Future<_MediaProbe> _probeMediaUrl(
     proxy: DanmakuApi.systemProxy,
   );
   final watch = Stopwatch();
+  final requestHeaders = _probeHeaders(headers, url);
   try {
-    final request =
-        await client.headUrl(uri).timeout(const Duration(seconds: 3));
-    headers.forEach(request.headers.set);
-    watch.start();
-    final response = await request.close().timeout(const Duration(seconds: 5));
-    watch.stop();
-    final mime = response.headers.contentType?.mimeType.toLowerCase() ?? '';
-    try {
-      await response.drain<void>();
-    } catch (_) {
-      // 丢弃响应体失败不影响结论。
+    if (_hasMediaExtension(url)) {
+      final direct = await _timedProbeRequest(client, uri, requestHeaders,
+          head: false, watch: watch);
+      return direct == null
+          ? (ok: true, ttfbMs: 0, reason: null)
+          : (ok: true, ttfbMs: direct.ms, reason: null);
     }
-    return _judgeMime(mime, watch.elapsedMilliseconds);
-  } catch (_) {
-    // HEAD 被拒（405/501）或直接失败：退回 GET + Range，同样量首字节。
-    try {
-      final request =
-          await client.getUrl(uri).timeout(const Duration(seconds: 3));
-      headers.forEach(request.headers.set);
-      request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1023');
-      watch
-        ..reset()
-        ..start();
-      final response = await request.close().timeout(const Duration(seconds: 5));
-      watch.stop();
-      final mime = response.headers.contentType?.mimeType.toLowerCase() ?? '';
-      try {
-        await response.drain<void>();
-      } catch (_) {
-        // 同上：响应体丢弃失败不影响结论。
-      }
-      return _judgeMime(mime, watch.elapsedMilliseconds);
-    } catch (_) {
-      // 探测失败一律按"未知"放行，交给 mpv 自己判断。
-      return (ok: true, ttfbMs: 0, reason: null);
+    final head = await _timedProbeRequest(client, uri, requestHeaders,
+        head: true, watch: watch);
+    final result = head ??
+        await _timedProbeRequest(client, uri, requestHeaders,
+            head: false, watch: watch);
+    if (result == null) return (ok: true, ttfbMs: 0, reason: null);
+    if (result.status >= 400) {
+      // 403/404 之类的错误页不能当"是网页"的证据：站点可能只是拒绝探测请求。
+      return (ok: true, ttfbMs: result.ms, reason: null);
     }
+    return _judgeMime(result.mime, result.ms);
   } finally {
     client.close(force: true);
   }
@@ -773,6 +818,10 @@ Future<void> _switchPlaybackSource(
     var resolvedEpisode = candidate.episodeMatch.episode;
     var resolvedEpisodeIndex = candidate.episodeMatch.episodeIndex;
     Object? lastError;
+    // 探测说"像网页"时不要直接判这条来源不可用：探测本身可能被 CDN 的
+    // 403 错误页误导（1.9.3 的回归），所以留一份兜底，全部线路都失败时仍然试它。
+    ({MediaPlaySpec spec, int lineIndex, String lineName, VodEpisode episode,
+      int episodeIndex})? fallback;
     for (final attempt in attempts) {
       if (!owner.isCurrent) return;
       try {
@@ -786,11 +835,18 @@ Future<void> _switchPlaybackSource(
           parses: owner.config.parses,
         ).timeout(const Duration(seconds: 20)));
         // 解析成功但拿到的是网页（站点没给可播直链 / 需要额外解析）：
-        // mpv 只会报 `Failed to recognize file format.`，这里提前判失败换下一条线路。
-        final media = await _probeMediaUrl(spec.url, spec.headers ?? const {});
+        // mpv 只会报 `Failed to recognize file format.`，先换下一条线路，同时留兜底。
+        final media = await _probeMediaUrl(spec.url, spec.headers);
         if (!media.ok) {
           lastError = FormatException(
               '「${attempt.lineName}」返回的是网页而不是媒体地址（该站可能需要解析）');
+          fallback ??= (
+            spec: spec,
+            lineIndex: attempt.lineIndex,
+            lineName: attempt.lineName,
+            episode: attempt.episode,
+            episodeIndex: attempt.episodeIndex,
+          );
           continue;
         }
         resolved = spec;
@@ -803,6 +859,14 @@ Future<void> _switchPlaybackSource(
         if (error is PlaybackSourceCancelled) rethrow;
         lastError = error;
       }
+    }
+    if (resolved == null && fallback != null) {
+      // 所有线路都被探测判成网页 —— 仍然让 mpv 试一次，播放器报告的错误更可信。
+      resolved = fallback.spec;
+      resolvedSourceIndex = fallback.lineIndex;
+      resolvedSourceName = fallback.lineName;
+      resolvedEpisode = fallback.episode;
+      resolvedEpisodeIndex = fallback.episodeIndex;
     }
     if (resolved == null) {
       throw StateError('该来源的 ${attempts.length} 条线路都没能播放'
