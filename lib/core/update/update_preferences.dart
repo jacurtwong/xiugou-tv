@@ -8,7 +8,10 @@ import 'app_version.dart';
 class UpdatePreferences {
   static const int formatVersion = 1;
 
-  /// 启动后自动检查一次（默认开启）。
+  /// 启动后自动检查一次（**默认关闭**）。
+  ///
+  /// 2026-11-18 起默认关闭：本项目已脱离上游（qfw66）独立维护，启动即拉远端清单
+  /// 既无意义也会让人以为「会自己装上游的包」。需要时在「关于」页点版本号手动检查。
   final bool autoCheck;
 
   /// 自定义更新源（空串 = 只使用官方 GitHub Releases）。
@@ -22,7 +25,7 @@ class UpdatePreferences {
   final bool useMirror;
 
   const UpdatePreferences({
-    this.autoCheck = true,
+    this.autoCheck = false,
     this.source = '',
     this.skippedVersion,
     this.useMirror = true,
@@ -93,7 +96,8 @@ class UpdatePreferences {
     }
     final skippedText = (rawSkipped as String?)?.trim();
     return UpdatePreferences(
-      autoCheck: rawAutoCheck as bool? ?? true,
+      // 缺字段（旧配置文件 / 首次运行）按「不自动检查」处理。
+      autoCheck: rawAutoCheck as bool? ?? false,
       source: source,
       skippedVersion:
           (skippedText == null || skippedText.isEmpty) ? null : skippedText,

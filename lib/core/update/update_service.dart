@@ -7,13 +7,16 @@ import 'update_manifest.dart';
 import 'update_mirrors.dart';
 import 'update_preferences.dart';
 
-/// 官方更新源（公开仓库，Releases API 无需鉴权）。
+/// 官方更新源（本仓库自己的 Releases API，无需鉴权）。
+///
+/// 2026-11-18 起指向 `jacurtwong/xiugou-tv`：项目已脱离上游（qfw66）独立维护，
+/// 更新只应来自本仓库自己的发布，避免一按「检查更新」就把上游的安装包装回来。
 const String officialUpdateSourceUrl =
-    'https://api.github.com/repos/qfw66/xiugou-tv/releases/latest';
+    'https://api.github.com/repos/jacurtwong/xiugou-tv/releases/latest';
 
 /// 发布页（无安装版资产 / 便携版时引导用户手动下载）。
 const String releasePageUrl =
-    'https://github.com/qfw66/xiugou-tv/releases/latest';
+    'https://github.com/jacurtwong/xiugou-tv/releases/latest';
 
 enum UpdateCheckStatus {
   upToDate,
