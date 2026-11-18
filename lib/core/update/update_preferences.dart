@@ -25,7 +25,7 @@ class UpdatePreferences {
   final bool useMirror;
 
   const UpdatePreferences({
-    this.autoCheck = false,
+    this.autoCheck = true,
     this.source = '',
     this.skippedVersion,
     this.useMirror = true,

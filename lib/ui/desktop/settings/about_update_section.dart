@@ -19,6 +19,9 @@ class AboutUpdateSection extends StatelessWidget {
   final String currentVersion;
   final VoidCallback onCheck;
   final ValueChanged<bool> onAutoCheckChanged;
+
+  /// 打开关于页时静默检查一次（不弹窗）：这样用户不用先按一下才知道有没有新版本。
+  final VoidCallback onAutoCheckOnOpen;
   final VoidCallback onOpenResult;
 
   /// 两行之间插入的内容（构建信息），由关于页提供，保持「版本 → 构建信息 → 自动检查」的顺序。
@@ -31,13 +34,23 @@ class AboutUpdateSection extends StatelessWidget {
     required this.currentVersion,
     required this.onCheck,
     required this.onAutoCheckChanged,
+    required this.onAutoCheckOnOpen,
     required this.onOpenResult,
     this.between,
   });
 
+  /// 关于页每次打开只自动查一次（进程内）。
+  static bool _autoCheckedOnOpen = false;
+
   @override
   Widget build(BuildContext context) {
     final palette = context.palette;
+    if (!_autoCheckedOnOpen &&
+        state.result == null &&
+        state.phase == UpdatePhase.idle) {
+      _autoCheckedOnOpen = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => onAutoCheckOnOpen());
+    }
     final checking = state.phase == UpdatePhase.checking;
     final result = state.result;
     final hasUpdate = result?.status == UpdateCheckStatus.available && !state.busy;

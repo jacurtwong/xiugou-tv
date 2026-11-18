@@ -3211,6 +3211,8 @@ class AboutUpdateSectionHost extends ConsumerWidget {
       },
       onAutoCheckChanged: (value) => unawaited(
           ref.read(updatePreferencesProvider.notifier).setAutoCheck(value)),
+      // 打开关于页就静默查一次：不用先按一下才知道有没有新版本。
+      onAutoCheckOnOpen: () => unawaited(controller.check()),
       onOpenResult: () => unawaited(showUpdateDialog(context)),
       between: between,
     );
@@ -3270,8 +3272,17 @@ class _UpdateCheckHostState extends ConsumerState<UpdateCheckHost> {
 
   Future<void> _run() async {
     if (_ran || !mounted) return;
+    // 偏好是异步从磁盘加载的：启动 8 秒时可能还没读完（此时读到的还是默认值），
+    // 以前这里直接 return 并置 _ran，导致「自动检查」永远不执行、关于页也拿不到任何结果。
+    // 现在最多等 3 秒看它是否变成 true，等不到才放弃。
+    var autoCheck = ref.read(updatePreferencesProvider).autoCheck;
+    for (var i = 0; i < 10 && !autoCheck && mounted; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      autoCheck = ref.read(updatePreferencesProvider).autoCheck;
+    }
+    if (!mounted) return;
     _ran = true;
-    if (!ref.read(updatePreferencesProvider).autoCheck) return;
+    if (!autoCheck) return;
 
     final controller = ref.read(updateControllerProvider.notifier);
     final result = await controller.check();
