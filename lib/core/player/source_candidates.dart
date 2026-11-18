@@ -55,6 +55,58 @@ List<CrossSiteResolveAttempt> resolveLineAttempts(
   return attempts;
 }
 
+/// 一条来源的**可播性体检**结果（照 KimBoxPC `/api/sites/ping` + `probeMedia` 的思路）：
+/// 真的去解析一次该线路、再看返回的是不是媒体，而不是只相信搜索时的耗时。
+class SourceProbe {
+  const SourceProbe({required this.ok, required this.ms, this.reason});
+
+  final bool ok;
+
+  /// 从发起解析到拿到可播地址的毫秒数（失败时为耗时）。
+  final int ms;
+
+  /// 失败原因（`网页直链` / `解析超时` / 具体异常首行）。
+  final String? reason;
+}
+
+/// 候选的身份键（站点 + 线路），用于把体检结果对回列表项。
+String sourceCandidateKey(CrossSiteCandidate candidate) =>
+    '${candidate.site.key}::${candidate.source.name}';
+
+/// 展示排序（照 KimBoxPC 的 `rank` 思路）：
+/// 1. 体检可播的排最前，按体检耗时升序；
+/// 2. 还没测到的排中间，按搜索延迟升序；
+/// 3. 体检失败（网页直链 / 超时 / 报错）排最后，按搜索延迟升序。
+List<CrossSiteCandidate> sortCandidatesByProbe(
+  Iterable<CrossSiteCandidate> input,
+  Map<String, SourceProbe> probes,
+) {
+  final indexed = <(int, CrossSiteCandidate)>[
+    for (var i = 0; i < input.length; i++) (i, input.elementAt(i)),
+  ];
+  int rank(CrossSiteCandidate candidate, SourceProbe? probe) {
+    if (probe == null) return 1;
+    return probe.ok ? 0 : 2;
+  }
+
+  int latency(CrossSiteCandidate candidate, SourceProbe? probe) {
+    if (probe != null && probe.ok) return probe.ms;
+    if (candidate.latencyMs <= 0) return 1 << 30;
+    return candidate.latencyMs;
+  }
+
+  indexed.sort((a, b) {
+    final pa = probes[sourceCandidateKey(a.$2)];
+    final pb = probes[sourceCandidateKey(b.$2)];
+    final byRank = rank(a.$2, pa).compareTo(rank(b.$2, pb));
+    if (byRank != 0) return byRank;
+    final byLatency = latency(a.$2, pa).compareTo(latency(b.$2, pb));
+    return byLatency != 0 ? byLatency : a.$1.compareTo(b.$1);
+  });
+  return List<CrossSiteCandidate>.unmodifiable(
+      [for (final entry in indexed) entry.$2]);
+}
+
 /// 选集抽屉「其他来源」的自动搜索结果。
 ///
 /// 与换源对话框的区别只在**排序**：对话框按匹配度（`score`）排，
@@ -64,6 +116,7 @@ class SourceCandidatesState {
     this.searching = false,
     this.searched = false,
     this.candidates = const <CrossSiteCandidate>[],
+    this.probes = const <String, SourceProbe>{},
     this.message,
     this.episodeKey,
   });
@@ -74,8 +127,11 @@ class SourceCandidatesState {
   /// 至少完成过一次搜索（用于区分「还没搜」与「搜了但没有」）。
   final bool searched;
 
-  /// 按延迟升序排好的候选。
+  /// 按体检结果 + 延迟排好序的候选。
   final List<CrossSiteCandidate> candidates;
+
+  /// 每个候选的可播性体检结果（key 见 [sourceCandidateKey]）。
+  final Map<String, SourceProbe> probes;
 
   /// 没结果时的说明（超时 / 失败 / 没有可信同片同集）。
   final String? message;
@@ -84,6 +140,23 @@ class SourceCandidatesState {
   final String? episodeKey;
 
   bool get hasCandidates => candidates.isNotEmpty;
+
+  SourceProbe? probeFor(CrossSiteCandidate candidate) =>
+      probes[sourceCandidateKey(candidate)];
+
+  SourceCandidatesState copyWith({
+    List<CrossSiteCandidate>? candidates,
+    Map<String, SourceProbe>? probes,
+    String? message,
+  }) =>
+      SourceCandidatesState(
+        searching: searching,
+        searched: searched,
+        candidates: candidates ?? this.candidates,
+        probes: probes ?? this.probes,
+        message: message ?? this.message,
+        episodeKey: episodeKey,
+      );
 }
 
 /// 按延迟升序排列；未测到延迟（0）的排最后，同延迟保持传入顺序（稳定排序）。

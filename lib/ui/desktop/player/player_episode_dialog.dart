@@ -205,10 +205,14 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                   _hint(palette, '打开时自动搜索')
                 else if (state.searching)
                   _hint(palette, '自动搜索中…')
-                else if (state.hasCandidates)
+                else if (state.hasCandidates) ...[
                   for (final candidate in state.candidates)
-                    _candidateRow(context, palette, candidatesNav, candidate)
-                else
+                    _candidateRow(
+                        context, palette, candidatesNav, state, candidate),
+                  if (state.candidates
+                      .any((candidate) => state.probeFor(candidate) == null))
+                    _hint(palette, '正在检测可用性…'),
+                ] else
                   _hint(palette, state.message ?? '没有找到其他来源'),
               ],
             ],
@@ -235,24 +239,44 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                 fontSize: AppType.caption)),
       );
 
-  Widget _candidateRow(BuildContext context, AppPalette palette,
-      PlayerSourceCandidatesNav candidatesNav, CrossSiteCandidate candidate) {
-    final latency = candidate.latencyMs;
-    final color = latency <= 0
+  Widget _candidateRow(
+      BuildContext context,
+      AppPalette palette,
+      PlayerSourceCandidatesNav candidatesNav,
+      SourceCandidatesState state,
+      CrossSiteCandidate candidate) {
+    final probe = state.probeFor(candidate);
+    final searchLatency = candidate.latencyMs;
+    final searchColor = searchLatency <= 0
         ? palette.playerText.withValues(alpha: 0.5)
-        : latency < 400
+        : searchLatency < 400
             ? palette.success
-            : latency < 1200
+            : searchLatency < 1200
                 ? palette.playerText.withValues(alpha: 0.75)
                 : palette.warning;
+    // 体检结果优先：可用显示「✓ 实测耗时」，不可用显示「✗ 原因」，
+    // 还没测到就先显示搜索耗时（灰一点，避免和实测混淆）。
+    final String trailing;
+    final Color trailingColor;
+    if (probe == null) {
+      trailing = formatLatency(searchLatency);
+      trailingColor = searchColor.withValues(alpha: 0.6);
+    } else if (probe.ok) {
+      trailing = '✓ ${formatLatency(probe.ms)}';
+      trailingColor = palette.success;
+    } else {
+      trailing = '✗ ${probe.reason ?? '不可用'}';
+      trailingColor = palette.warning;
+    }
     return _sourceRow(
       context,
       palette,
       title: '${candidate.site.name} · ${candidate.source.name}',
       subtitle: '${candidate.episodeName}'
           '${candidate.confidence == CrossSiteConfidence.high ? '' : ' · 请确认'}',
-      trailing: formatLatency(latency),
-      trailingColor: color,
+      trailing: trailing,
+      trailingColor: trailingColor,
+      dim: probe?.ok == false,
       onTap: () => candidatesNav.onSelect(candidate),
     );
   }
@@ -265,9 +289,15 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
     String? trailing,
     Color? trailingColor,
     bool enabled = true,
+    bool dim = false,
     required VoidCallback onTap,
   }) {
     final ink = palette.playerText;
+    final titleColor = !enabled
+        ? ink.withValues(alpha: 0.45)
+        : dim
+            ? ink.withValues(alpha: 0.6)
+            : ink;
     return FocusRing(
       onTap: enabled ? onTap : null,
       borderRadius: const BorderRadius.all(Radius.circular(AppRadii.sm)),
@@ -289,8 +319,7 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              color: enabled ? ink : ink.withValues(alpha: 0.45),
-                              fontSize: AppType.body)),
+                              color: titleColor, fontSize: AppType.body)),
                       if (subtitle != null)
                         Text(subtitle,
                             maxLines: 1,
@@ -304,8 +333,7 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
                 if (trailing != null)
                   Text(trailing,
                       style: TextStyle(
-                          color: trailingColor ??
-                              palette.accentInk,
+                          color: trailingColor ?? palette.accentInk,
                           fontSize: AppType.caption,
                           fontWeight: FontWeight.w600)),
               ],

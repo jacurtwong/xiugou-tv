@@ -119,6 +119,10 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
         episodeKey: episodeKey,
         message: message.isEmpty ? null : message,
       );
+      if (sorted.isNotEmpty) {
+        // 照 KimBoxPC 的做法：列表先出来，后台逐条体检可播性，回来后重排。
+        unawaited(_probeCandidates(token, episodeKey, sorted));
+      }
     } catch (_) {
       if (!identical(_token, token) || token.isCancelled) return;
       state = SourceCandidatesState(
@@ -128,6 +132,68 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
       );
     } finally {
       if (identical(_token, token)) _inFlightKey = null;
+    }
+  }
+
+  /// 后台逐条体检「这条来源到底能不能播」：解析一次 + 判断返回的是不是媒体。
+  ///
+  /// 照 KimBoxPC 的做法（`/api/sites/ping` + `probeMedia`）：列表先出来，体验结果陆续回填，
+  /// 可用 / 不可用会重排。并发 3，单条 8 秒上限，全部失败也不会拖住界面。
+  Future<void> _probeCandidates(SearchCancelToken token, String episodeKey,
+      List<CrossSiteCandidate> candidates) async {
+    var cursor = 0;
+    Future<void> worker() async {
+      while (true) {
+        if (!identical(_token, token) || token.isCancelled) return;
+        final index = cursor++;
+        if (index >= candidates.length) return;
+        final candidate = candidates[index];
+        final probe = await _probe(candidate);
+        if (!identical(_token, token) || token.isCancelled) return;
+        if (state.episodeKey != episodeKey) return;
+        final probes = Map<String, SourceProbe>.of(state.probes);
+        probes[sourceCandidateKey(candidate)] = probe;
+        state = state.copyWith(
+          probes: probes,
+          candidates: sortCandidatesByProbe(state.candidates, probes),
+        );
+      }
+    }
+
+    await Future.wait([for (var i = 0; i < 3; i++) worker()]);
+  }
+
+  Future<SourceProbe> _probe(CrossSiteCandidate candidate) async {
+    final attempt = resolveLineAttempts(candidate).first;
+    final watch = Stopwatch()..start();
+    try {
+      final config = _ref.read(configRepositoryProvider).currentVodConfig;
+      final spec = await _ref
+          .read(siteApiProvider)
+          .resolvePlayback(
+            candidate.site,
+            id: attempt.episode.url,
+            flag: attempt.lineName,
+            preferredQualityName: _ref
+                .read(playbackQualityPreferencesProvider)[candidate.site.key],
+            parseEngine: _ref.read(parseEngineProvider),
+            parses: config.parses,
+          )
+          .timeout(const Duration(seconds: 8));
+      watch.stop();
+      if (!await _looksLikeMediaUrl(spec.url, spec.headers ?? const {})) {
+        return SourceProbe(
+            ok: false, ms: watch.elapsedMilliseconds, reason: '网页直链');
+      }
+      return SourceProbe(ok: true, ms: watch.elapsedMilliseconds);
+    } on TimeoutException {
+      watch.stop();
+      return SourceProbe(
+          ok: false, ms: watch.elapsedMilliseconds, reason: '解析超时');
+    } catch (error) {
+      watch.stop();
+      return SourceProbe(
+          ok: false, ms: watch.elapsedMilliseconds, reason: _shortFailure(error));
     }
   }
 }
