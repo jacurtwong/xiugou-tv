@@ -4,6 +4,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../../core/app_info.dart';
 import '../../../core/config/config_repository.dart';
 import '../../../core/companion/companion_process_manager.dart';
 import '../../../core/companion/companion_spider_api.dart';
@@ -4359,8 +4360,9 @@ class AboutPanel extends StatefulWidget {
     this.errorLog,
   });
 
-  static const String sourceCodeUrl = 'https://github.com/qfw66/xiugou-tv';
-  static const String issuesUrl = 'https://github.com/qfw66/xiugou-tv/issues';
+  static const String sourceCodeUrl = 'https://github.com/jacurtwong/xiugou-tv';
+  static const String issuesUrl =
+      'https://github.com/jacurtwong/xiugou-tv/issues';
 
   @override
   State<AboutPanel> createState() => _AboutPanelState();
@@ -4501,7 +4503,7 @@ class _AboutPanelState extends State<AboutPanel> {
                     width: 88, height: 88, filterQuality: FilterQuality.high),
               ),
               const SizedBox(height: 14),
-              Text('修狗TV',
+              Text(appDisplayName,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                       fontSize: AppType.h2,

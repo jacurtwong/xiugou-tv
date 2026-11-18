@@ -3448,7 +3448,7 @@ class XiugouTvApp extends ConsumerWidget {
         isRealMpvEngine ? buildPlayerTrackNavs(playerEngine) : null;
 
     return MaterialApp(
-      title: '修狗TV',
+      title: appDisplayName,
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(
           brightness: Brightness.light, palette: AppPalette.light),

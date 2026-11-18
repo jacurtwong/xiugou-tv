@@ -16,6 +16,35 @@
 
 ---
 
+## [1.4.0] - 2026-11-18
+
+### 调整：改名「修狗TV（魔改版）」并全面指向自己的仓库
+
+- **背景**：仓库已脱离上游独立维护，但程序标题、关于页、安装器、源代码 / 反馈链接仍写着上游的
+  「修狗TV」与 `qfw66`，用户分不清装的是哪一份。
+- **改动**：
+  - 新增 `lib/core/app_info.dart` 的 `appDisplayName` / `appShortName` / `appEditionLabel`
+    三个常量，显示名统一为 **修狗TV（魔改版）**：
+    - 窗口标题（`windows/runner/main.cpp`、`DesktopWindowManager`、`MaterialApp.title`）；
+    - 关于页标题、侧栏品牌（侧栏宽度只有 112px，所以拆成「修狗TV」+「魔改版」两行）；
+    - 版本资源 `FileDescription` / `ProductName`（`Runner.rc`）；
+    - 安装器 `AppName` / `DefaultGroupName`；
+  - **内部标识不动**：exe 仍叫 `xiugou_tv.exe`、安装器 `AppId` 不变、数据目录仍是 `XiugouTV`
+    —— 否则覆盖升级、历史与备份会全部对不上；
+  - 安装器脚本改为 UTF-8 **带 BOM**（Inno Setup 需要，否则中文 AppName 会乱码）；
+  - 关于页「Source Code / 问题反馈」由 `qfw66/xiugou-tv` 改为 `jacurtwong/xiugou-tv`；
+    安装器里的 `AppPublisherURL` / `AppSupportURL` / `AppUpdatesURL` 同步；
+  - README 首段注明「上游分叉 + 独立维护」与可覆盖升级的说明；
+  - 版本号 1.3.0 → 1.4.0。
+- **验证**：`flutter analyze` 无新增问题；`flutter test` 30 例全过；完整打包 + 34 项冒烟门禁通过
+  （门禁会核对 exe / 安装包的 `FileVersion` / `ProductVersion` 与版本号一致）。
+- **关于「检查更新」**：更新检查走 GitHub Releases API（`.../releases/latest`），
+  **必须在本仓库发布 Release 才会命中**；安装包命名要能匹配
+  `xiugou-tv-windows-x64-v<版本>-setup.exe`（也接受任意 `*-setup.exe` 兜底）。
+  仓库目前没有 Release，所以关于页点「检查更新」会显示失败，属于预期。
+
+---
+
 ## [1.3.0] - 2026-11-18
 
 ### 新增：播放信息 OSD（`I` 键开关）

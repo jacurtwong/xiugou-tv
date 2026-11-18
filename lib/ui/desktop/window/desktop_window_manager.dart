@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'package:window_manager/window_manager.dart';
+import '../../../core/app_info.dart';
 import '../../../core/config/config_repository.dart';
 import '../../../core/config/models/desktop_window_config.dart';
 import 'window_geometry_guard.dart';
@@ -90,7 +91,7 @@ class DesktopWindowManager with WindowListener {
       backgroundColor: backgroundColor,
       skipTaskbar: false,
       titleBarStyle: TitleBarStyle.hidden,
-      title: '修狗TV',
+      title: appDisplayName,
     );
 
     // 异步等待原生窗口就绪后展示，不阻塞 main() 中 runApp 挂载

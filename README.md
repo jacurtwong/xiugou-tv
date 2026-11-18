@@ -1,6 +1,10 @@
-# 修狗TV（xiugou-tv）
+# 修狗TV（魔改版）
 
-一款面向 Windows 的桌面影视聚合播放客户端。
+一款面向 Windows 的桌面影视聚合播放客户端。本项目是从
+[`qfw66/xiugou-tv`](https://github.com/qfw66/xiugou-tv) 分叉出来的社区魔改版，
+由 [`jacurtwong/xiugou-tv`](https://github.com/jacurtwong/xiugou-tv) 独立维护；
+内部标识（`xiugou_tv.exe`、安装器 AppId、数据目录 `XiugouTV`）与上游保持一致，
+可直接覆盖升级。
 
 <p align="center">
   <img src="assets/icons/app_icon.png" width="128" alt="修狗TV 图标">
@@ -8,7 +12,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/平台-Windows%2010%2F11%20x64-0078D4" alt="平台">
-  <img src="https://img.shields.io/badge/版本-1.3.0-2ea44f" alt="版本">
+  <img src="https://img.shields.io/badge/版本-1.4.0-2ea44f" alt="版本">
   <img src="https://img.shields.io/badge/许可证-GPL--3.0-blue" alt="许可证">
   <a href="https://t.me/+Z-8NGECyhdkzMDVl" target="_blank">
     <img src="https://img.shields.io/badge/TG群组-点击加入-blue" alt="TG">

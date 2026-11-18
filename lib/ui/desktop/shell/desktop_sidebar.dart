@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/app_info.dart';
 import '../../theme/app_icon_assets.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_tokens.dart';
@@ -71,12 +72,22 @@ class DesktopSidebar extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '修狗TV',
+                  appShortName,
                   style: TextStyle(
                     fontSize: AppType.caption,
                     fontWeight: FontWeight.bold,
                     color: palette.textTitle,
                     letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  appEditionLabel,
+                  style: TextStyle(
+                    fontSize: AppType.caption - 2,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textSub,
+                    letterSpacing: 1.2,
                   ),
                 ),
               ],
