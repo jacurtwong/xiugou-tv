@@ -58,16 +58,22 @@ class CrossSiteSearchService {
     required SearchEngine searchEngine,
     required SiteApi siteApi,
     int maxCandidates = maxCrossSiteCandidateCount,
+    int maxSites = maxCrossSiteSiteCount,
+    Duration budget = searchBudget,
   }) : this.withLoaders(
           search: searchEngine.searchAllIncremental,
           detail: siteApi.fetchDetail,
           maxCandidates: maxCandidates,
+          maxSites: maxSites,
+          budget: budget,
         );
 
   CrossSiteSearchService.withLoaders({
     required CrossSiteSearchLoader search,
     required CrossSiteDetailLoader detail,
     this.maxCandidates = maxCrossSiteCandidateCount,
+    this.maxSites = maxCrossSiteSiteCount,
+    this.budget = searchBudget,
   })  : _search = search,
         _detail = detail;
 
@@ -79,6 +85,12 @@ class CrossSiteSearchService {
   /// 换源对话框 / 自动换源用默认的 3；选集抽屉要「尽量列出所有来源」，
   /// 由宿主显式传更大的值（延迟排序后多出来的排在后面，不影响快的优先）。
   final int maxCandidates;
+
+  /// 最多搜多少个站点（选集弹窗要列全来源，会显式传更大的值）。
+  final int maxSites;
+
+  /// 单次搜索的总预算（默认 8 秒；列全来源时会放宽）。
+  final Duration budget;
 
   final CrossSiteSearchLoader _search;
   final CrossSiteDetailLoader _detail;
@@ -118,6 +130,7 @@ class CrossSiteSearchService {
       sites: distinctSites,
       currentSiteKey: currentSiteKey,
       visitedSiteKeys: visited,
+      limit: maxSites,
     );
     if (selected.isEmpty) {
       return CrossSiteSearchResult(status: CrossSiteSearchStatus.completed);
@@ -143,17 +156,27 @@ class CrossSiteSearchService {
         return config != 0 ? config : left.order.compareTo(right.order);
       });
       final shortlist = hits.take(maxCandidates).toList();
-      final probes = <Future<_DetailOutcome>>[];
-      for (final hit in shortlist) {
-        if (cancelToken.isCancelled) break;
-        probes.add(_probeDetail(hit, cancellation.future));
+      // 全源搜索时候选可达 24 个：详情探测按 4 路并发，避免同时把一堆
+      // spider 调用塞满 companion 的 callPool（64 满了就是全站 503）。
+      final outcomes = List<_DetailOutcome?>.filled(shortlist.length, null);
+      var probeCursor = 0;
+      Future<void> probeWorker() async {
+        while (true) {
+          if (cancelToken.isCancelled) return;
+          final index = probeCursor++;
+          if (index >= shortlist.length) return;
+          outcomes[index] =
+              await _probeDetail(shortlist[index], cancellation.future);
+        }
       }
-      final outcomes = await Future.wait(probes);
+
+      await Future.wait([for (var i = 0; i < 4; i++) probeWorker()]);
       final candidates = <CrossSiteCandidate>[];
       var detailTimeoutCount = 0;
       var detailErrorCount = 0;
       for (var index = 0; index < outcomes.length; index++) {
         final outcome = outcomes[index];
+        if (outcome == null) continue;
         if (outcome.timedOut) detailTimeoutCount++;
         if (outcome.failed) detailErrorCount++;
         if (cancelToken.isCancelled || outcome.detail == null) continue;
@@ -197,7 +220,7 @@ class CrossSiteSearchService {
             ? const <CrossSiteCandidate>[]
             : rankCrossSiteCandidates(candidates, limit: maxCandidates),
         searchedSiteCount: selected.length,
-        detailProbeCount: probes.length,
+        detailProbeCount: outcomes.whereType<_DetailOutcome>().length,
         searchTimedOut: collected.timedOut,
         detailTimeoutCount: detailTimeoutCount,
         searchErrorCount: collected.errorCount,
@@ -231,7 +254,7 @@ class CrossSiteSearchService {
       stopwatch.stop();
       completion.complete(_SearchCollection(
         hits.values.toList(),
-        timedOut: timedOut || stopwatch.elapsed >= searchBudget,
+        timedOut: timedOut || stopwatch.elapsed >= budget,
         errorCount: errorCount,
       ));
       try {
@@ -244,7 +267,7 @@ class CrossSiteSearchService {
     }
 
     cancellation.then((_) => finish());
-    timer = Timer(searchBudget, () => finish(timedOut: true));
+    timer = Timer(budget, () => finish(timedOut: true));
     if (cancelToken.isCancelled) {
       finish();
       return completion.future;
@@ -262,7 +285,7 @@ class CrossSiteSearchService {
       subscription = stream.listen(
         (batch) {
           if (completion.isCompleted) return;
-          if (cancelToken.isCancelled || stopwatch.elapsed >= searchBudget) {
+          if (cancelToken.isCancelled || stopwatch.elapsed >= budget) {
             finish();
             return;
           }
@@ -273,7 +296,7 @@ class CrossSiteSearchService {
             return;
           }
           for (final item in batch.items) {
-            if (stopwatch.elapsed >= searchBudget) {
+            if (stopwatch.elapsed >= budget) {
               finish();
               return;
             }
@@ -285,7 +308,7 @@ class CrossSiteSearchService {
               targetEpisodeCount: target.episodeCount,
               candidateEpisodeCount: 0,
             ).score;
-            if (stopwatch.elapsed >= searchBudget) {
+            if (stopwatch.elapsed >= budget) {
               finish();
               return;
             }
@@ -304,7 +327,7 @@ class CrossSiteSearchService {
         },
         onError: (Object error, StackTrace stack) {
           if (completion.isCompleted) return;
-          if (stopwatch.elapsed < searchBudget) errorCount++;
+          if (stopwatch.elapsed < budget) errorCount++;
           finish();
         },
         onDone: finish,
@@ -315,7 +338,7 @@ class CrossSiteSearchService {
       }
     } catch (_) {
       if (!completion.isCompleted) {
-        if (stopwatch.elapsed < searchBudget) errorCount++;
+        if (stopwatch.elapsed < budget) errorCount++;
         finish();
       }
     }

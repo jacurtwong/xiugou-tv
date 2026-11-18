@@ -8,12 +8,16 @@ import 'line_switch_planner.dart';
 /// 跨站故障转移的站源数量上限（方案 §3.4）。
 const int maxCrossSiteSiteCount = 8;
 
+/// 站点数量硬上限：选集弹窗要「列出所有能用的来源」，会显式传更大的 limit；
+/// 自动换源 / 换源对话框仍用默认的 8。
+const int maxCrossSiteSiteLimit = 500;
+
 /// 候选影片展示 / 手动尝试上限（方案 §3.4）。
 const int maxCrossSiteCandidateCount = 3;
 
 /// 候选数量硬上限：选集抽屉要尽量列全来源，可显式传更大的 limit；
 /// 自动换源 / 换源对话框仍用上面的默认值 3。
-const int maxCrossSiteCandidateLimit = 12;
+const int maxCrossSiteCandidateLimit = 30;
 
 /// 特别篇类别。只有同类才允许配对：宁可少配，也不把剧场版和 OVA 混为一部。
 enum CrossSiteSpecialKind {
@@ -586,7 +590,7 @@ List<Site> buildCrossSiteSiteList({
 }) {
   final effectiveLimit = limit <= 0
       ? 0
-      : (limit > maxCrossSiteSiteCount ? maxCrossSiteSiteCount : limit);
+      : (limit > maxCrossSiteSiteLimit ? maxCrossSiteSiteLimit : limit);
   if (effectiveLimit == 0) return const <Site>[];
 
   // 同一个 CMS 可能配了多个 key：当前站已用的 host 也不能再选。

@@ -262,7 +262,7 @@ class _PlayerEpisodeDialogLayerState extends State<PlayerEpisodeDialogLayer> {
       trailing = formatLatency(searchLatency);
       trailingColor = searchColor.withValues(alpha: 0.6);
     } else if (probe.ok) {
-      trailing = '✓ ${formatLatency(probe.ms)}';
+      trailing = probe.ms > 0 ? '✓ ${formatLatency(probe.ms)}' : '✓ 可用';
       trailingColor = palette.success;
     } else {
       trailing = '✗ ${probe.reason ?? '不可用'}';

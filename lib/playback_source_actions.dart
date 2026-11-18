@@ -88,11 +88,15 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
 
     var message = '';
     try {
+      final sites = _ref.read(configRepositoryProvider).currentVodConfig.sites;
       final result = await CrossSiteSearchService(
               searchEngine: _ref.read(searchEngineProvider),
               siteApi: _ref.read(siteApiProvider),
-              // 抽屉要「尽量列全」：默认只探 3 个候选，这里放到 8 个。
-              maxCandidates: 8)
+              // 全源搜索：配置里有多少站就搜多少站（KimBoxPC 的「同片源」口径），
+              // 候选也放宽到 24 个，预算 20 秒——超出预算才放弃慢站。
+              maxSites: sites.length,
+              maxCandidates: 24,
+              budget: const Duration(seconds: 20))
           .search(
         target: CrossSiteTarget(
           item: session.item,
@@ -100,7 +104,7 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
           episodeCount: session.episodes.length,
           siteKey: session.site!.key,
         ),
-        sites: _ref.read(configRepositoryProvider).currentVodConfig.sites,
+        sites: sites,
         cancelToken: token,
       );
       if (!identical(_token, token) || token.isCancelled) return;
@@ -160,7 +164,7 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
       }
     }
 
-    await Future.wait([for (var i = 0; i < 3; i++) worker()]);
+    await Future.wait([for (var i = 0; i < 4; i++) worker()]);
   }
 
   Future<SourceProbe> _probe(CrossSiteCandidate candidate) async {
@@ -179,7 +183,7 @@ class SourceCandidatesController extends StateNotifier<SourceCandidatesState> {
             parseEngine: _ref.read(parseEngineProvider),
             parses: config.parses,
           )
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 6));
       watch.stop();
       if (!await _looksLikeMediaUrl(spec.url, spec.headers ?? const {})) {
         return SourceProbe(
