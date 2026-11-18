@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/api/cms_json_api.dart';
 import 'core/api/douban_repository.dart';
 import 'core/api/models/vod_models.dart';
+import 'core/diagnostics/error_log.dart';
 import 'core/api/parse_engine.dart';
 import 'core/api/play_failure_text.dart';
 import 'core/api/search_cancel_token.dart';

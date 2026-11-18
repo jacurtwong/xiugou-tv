@@ -510,6 +510,14 @@ PlaybackSession? _sourceSearchContext(Ref ref) {
   return ref.read(activePlaybackSessionProvider);
 }
 
+/// 失败提示用的短原因：只取首行、去掉 URL，避免把源站地址打到界面上。
+String _shortFailure(Object error) {
+  var text = '$error'.split('\n').first.trim();
+  text = text.replaceAll(RegExp(r'https?://\S+'), '<地址>');
+  if (text.length > 60) text = '${text.substring(0, 60)}…';
+  return text.isEmpty ? '未知错误' : text;
+}
+
 Future<void> _switchPlaybackSource(
   Ref ref,
   PlaybackSourceChooser choose, {
@@ -572,16 +580,43 @@ Future<void> _switchPlaybackSource(
     }
     if (!owner.isCurrent || candidate == null) return;
     owner.status('正在解析${candidate.site.name}…');
-    var target = await owner.wait(ref
-        .read(siteApiProvider)
-        .resolvePlayback(candidate.site,
-            id: candidate.episodeMatch.episode.url,
-            flag: candidate.source.name,
-            preferredQualityName: ref
-                .read(playbackQualityPreferencesProvider)[candidate.site.key],
-            parseEngine: ref.read(parseEngineProvider),
-            parses: owner.config.parses)
-        .timeout(const Duration(seconds: 20)));
+    // 一个站点常有多条线路（`PlayFrom`），候选只挑了其中最匹配的那条；那条解析失败时
+    // 同站其它线路往往还能播。所以按「候选线路 → 同站其它线路」依次尝试，最多 3 条。
+    final attempts = resolveLineAttempts(candidate);
+    MediaPlaySpec? resolved;
+    var resolvedSourceIndex = candidate.sourceIndex;
+    var resolvedSourceName = candidate.source.name;
+    var resolvedEpisode = candidate.episodeMatch.episode;
+    var resolvedEpisodeIndex = candidate.episodeMatch.episodeIndex;
+    Object? lastError;
+    for (final attempt in attempts) {
+      if (!owner.isCurrent) return;
+      try {
+        final spec = await owner.wait(ref.read(siteApiProvider).resolvePlayback(
+          candidate.site,
+          id: attempt.episode.url,
+          flag: attempt.lineName,
+          preferredQualityName: ref
+              .read(playbackQualityPreferencesProvider)[candidate.site.key],
+          parseEngine: ref.read(parseEngineProvider),
+          parses: owner.config.parses,
+        ).timeout(const Duration(seconds: 20)));
+        resolved = spec;
+        resolvedSourceIndex = attempt.lineIndex;
+        resolvedSourceName = attempt.lineName;
+        resolvedEpisode = attempt.episode;
+        resolvedEpisodeIndex = attempt.episodeIndex;
+        break;
+      } catch (error) {
+        if (error is PlaybackSourceCancelled) rethrow;
+        lastError = error;
+      }
+    }
+    if (resolved == null) {
+      throw StateError('该来源的 ${attempts.length} 条线路都没能解析'
+          '${lastError == null ? '' : '：${_shortFailure(lastError)}'}');
+    }
+    var target = resolved;
     if (!owner.isCurrent) return;
     snapshot = _SourcePlaybackSnapshot(ref);
     // An unrelated old video can still sit behind an initial preparation error.
@@ -591,7 +626,7 @@ Future<void> _switchPlaybackSource(
     final position = continuing ? snapshot.position : Duration.zero;
     target = target.copyWith(
         title:
-            '${candidate.item.name} - ${candidate.episodeName} (${candidate.source.name})',
+            '${candidate.item.name} - ${resolvedEpisode.name} ($resolvedSourceName)',
         startPosition: position);
     final tracker = ref.read(playbackHistoryTrackerProvider);
     await tracker.flush();
@@ -608,16 +643,16 @@ Future<void> _switchPlaybackSource(
     if (!owner.isCurrent) throw const PlaybackSourceCancelled();
     final item = candidate.item;
     final recordId =
-        '${candidate.site.key}::${HistoryRecord.buildId(item.id, candidate.episodeName)}';
+        '${candidate.site.key}::${HistoryRecord.buildId(item.id, resolvedEpisode.name)}';
     final record = HistoryRecord(
         id: recordId,
         vodId: item.id,
         vodName: item.name,
         vodPic: item.pic,
-        episodeName: candidate.episodeName,
-        sourceName: candidate.source.name,
+        episodeName: resolvedEpisode.name,
+        sourceName: resolvedSourceName,
         playUrl: target.url,
-        episodeUrl: candidate.episodeMatch.episode.url,
+        episodeUrl: resolvedEpisode.url,
         siteKey: candidate.site.key,
         siteName: candidate.site.name,
         timestamp: DateTime.now().millisecondsSinceEpoch,
@@ -632,15 +667,13 @@ Future<void> _switchPlaybackSource(
     ref.read(activePlaySpecProvider.notifier).state = target;
     ref.read(activePlaybackSessionProvider.notifier).state = PlaybackSession(
         item: item,
-        sourceName: candidate.source.name,
-        episodes: candidate.source.episodes,
-        index: candidate.episodeMatch.episodeIndex,
+        sourceName: resolvedSourceName,
+        episodes: candidate.detail.sources[resolvedSourceIndex].episodes,
+        index: resolvedEpisodeIndex,
         site: candidate.site,
         sources: candidate.detail.sources,
-        sourceIndex: candidate.sourceIndex,
-        triedLines: {
-          lineSwitchKey(candidate.sourceIndex, candidate.source.name)
-        });
+        sourceIndex: resolvedSourceIndex,
+        triedLines: {lineSwitchKey(resolvedSourceIndex, resolvedSourceName)});
     ref.read(episodeBrowseSourceIndexProvider.notifier).state = null;
     tracker.track(recordId,
         flushPrevious: false,
@@ -650,11 +683,15 @@ Future<void> _switchPlaybackSource(
     ref.read(pendingPlayProvider.notifier).state = null;
     ref.read(playbackIntentProvider.notifier).state = null;
     ref.read(lineSwitchNoticeProvider.notifier).state =
-        '已换到「${candidate.site.name}」 · ${candidate.episodeName}';
-  } catch (error) {
+        '已换到「${candidate.site.name}」 · ${resolvedEpisode.name}';
+  } catch (error, stack) {
     if (owner.ownsPlayback) {
+      // 失败原因进错误日志（关于页「错误日志」可看），提示里只放短原因。
+      ErrorLog.instance.record('换源', error, stack);
       ref.read(lineSwitchNoticeProvider.notifier).state =
-          error is PlaybackSourceCancelled ? '已取消换源' : '换源失败，当前会话已保留';
+          error is PlaybackSourceCancelled
+              ? '已取消换源'
+              : '换源失败：${_shortFailure(error)}（当前会话已保留）';
       if (opened && snapshot != null) await snapshot.restore(ref, owner);
     }
   } finally {
