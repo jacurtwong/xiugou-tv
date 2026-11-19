@@ -74,7 +74,6 @@ class _FilterPillState extends State<FilterPill> {
                     ]
                   : null,
             ),
-            alignment: Alignment.center,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [

@@ -1,5 +1,24 @@
 ---
 
+## [1.11.3] - 2026-11-19
+
+### 修复：分类每个都占满一整行（胶囊被撑成横条）
+
+- **现象**（v1.11.2 实测）：分类条里每个分类各占一整行，变成一长串横条，看不到「横排」。
+- **根因**：`FilterPill` 的 `AnimatedContainer` 带了 `alignment: Alignment.center`。
+  `Container` 一旦设了 `alignment`，在**有界宽度**里就会像 `Align` 一样撑满父级；
+  以前的分类条是横向 `ListView`（宽度无界），所以看不出问题，换成 `Wrap` 后就全撑开了。
+- **改动**：
+  - 去掉 `FilterPill` 的 `alignment`（内部 `Row` 本来就是 `MainAxisSize.min`，视觉无变化）；
+  - 新增回归测试 `test/filter_pill_layout_test.dart`：
+    - `FilterPill` 在 600px 宽容器里必须 < 200px（防再被撑满）；
+    - `CollapsiblePillBar` 一行必须能放多个胶囊（前两个的 y 相同、x 递增）。
+    已验证：把 `alignment` 加回去两条测试立刻失败，去掉则通过。
+- **验证**：`flutter analyze` 无新增问题；`flutter test` **62 例全过**；完整打包 + 34 项冒烟门禁通过。
+- **边界**：`FilterPill` 是搜索站点栏、分类筛选行共用的组件，这次改动对那两处也是「按文字收缩」，
+  与它们原本的横向布局一致。
+---
+
 ## [1.11.2] - 2026-11-19
 
 ### 分类条改成「横排胶囊 + 末行虚线圈」的实现
