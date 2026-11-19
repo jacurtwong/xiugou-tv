@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/api/cms_json_api.dart';
 import 'core/api/douban_repository.dart';
+import 'core/api/category_order.dart';
 import 'core/api/models/vod_models.dart';
 import 'core/diagnostics/error_log.dart';
 import 'core/api/parse_engine.dart';
@@ -104,7 +105,6 @@ import 'ui/desktop/widgets/desktop_window_frame.dart';
 import 'ui/desktop/widgets/dialog_drag_strip.dart';
 import 'ui/desktop/widgets/filter_pill.dart';
 import 'ui/desktop/widgets/home_search_bar_host.dart';
-import 'ui/desktop/widgets/horizontal_scroll_area.dart';
 import 'ui/desktop/window/desktop_window_manager.dart';
 import 'ui/theme/app_palette.dart';
 import 'ui/theme/app_tokens.dart';
@@ -4136,7 +4136,6 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
 
   /// 搜索框焦点（聚焦时外框高亮；B3）
   final FocusNode _searchFocusNode = FocusNode();
-  final ScrollController _categoryScrollController = ScrollController();
 
   /// 海报网格的滚动控制器：豆瓣首页据此判断「内容有没有撑满一屏」（§19）
   final ScrollController _gridScrollController = ScrollController();
@@ -4343,7 +4342,6 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
     _searchController.dispose();
     _searchFocusNode.removeListener(_onSearchFocusChanged);
     _searchFocusNode.dispose();
-    _categoryScrollController.dispose();
     _gridScrollController.dispose();
     super.dispose();
   }
@@ -4774,7 +4772,9 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
         // 请求站源首页，动态拉取该站源专属的分类列表
         final homeRes = await siteApi.fetchHome(site);
         if (!_acceptContent(generation, identity)) return;
-        final fetchedCats = homeRes.categories;
+        // 配置里若写了 categories，就按它的顺序排在前面；否则保持接口给的顺序。
+        final fetchedCats =
+            orderCategoriesBySite(homeRes.categories, site.categories);
 
         // ignore: avoid_print
         print(
@@ -5829,70 +5829,46 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
                     Row(
                       children: [
                         Expanded(
-                          child: Container(
-                            height: 38,
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            // 分类多时鼠标滚轮 / 按住拖动都能横向滚动（§41）。
-                            child: HorizontalScrollArea(
-                              controller: _categoryScrollController,
-                              child: ListView.separated(
-                                key: const ValueKey('category-bar'),
-                                controller: _categoryScrollController,
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _categories.length +
-                                    (_isDoubanHome &&
-                                            _doubanViewingSingleCategory
-                                        ? 1
-                                        : 0),
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 8),
-                                itemBuilder: (context, index) {
-                                  if (_isDoubanHome &&
-                                      _doubanViewingSingleCategory) {
-                                    if (index == 0) {
-                                      return FilterPill(
-                                        label: '◀ 返回推荐大厅',
-                                        isSelected: false,
-                                        onTap: () {
-                                          setState(() {
-                                            _doubanViewingSingleCategory =
-                                                false;
-                                          });
-                                        },
-                                      );
-                                    }
-                                    index -= 1;
-                                  }
-                                  final cat = _categories[index];
-                                  final isSelected =
-                                      _selectedCategory?.id == cat.id;
-
-                                  return FilterPill(
-                                    label: cat.name,
-                                    isSelected: isSelected,
-                                    onTap: () {
-                                      _searchController.clear();
-                                      loadSiteData(
-                                          category: cat,
-                                          preserveCategories: true);
-                                    },
-                                  );
-                                },
-                              ),
-                            ),
+                          // 分类按窗口宽度自动换行铺满：站点常有几十个分类，
+                          // 横向滚动一屏看不全（用户 2026-11-19 口径）。
+                          child: Wrap(
+                            key: const ValueKey('category-bar'),
+                            spacing: 8,
+                            runSpacing: 8,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (_isDoubanHome && _doubanViewingSingleCategory)
+                                FilterPill(
+                                  label: '◀ 返回推荐大厅',
+                                  isSelected: false,
+                                  onTap: () {
+                                    setState(() {
+                                      _doubanViewingSingleCategory = false;
+                                    });
+                                  },
+                                ),
+                              for (final cat in _categories)
+                                FilterPill(
+                                  label: cat.name,
+                                  isSelected: _selectedCategory?.id == cat.id,
+                                  onTap: () {
+                                    _searchController.clear();
+                                    loadSiteData(
+                                        category: cat, preserveCategories: true);
+                                  },
+                                ),
+                              // 当前分类声明了筛选时，折叠开关跟在分类后面。
+                              if (currentFilters.isNotEmpty)
+                                CategoryFilterToggle(
+                                  filters: currentFilters,
+                                  selection: currentFilterSelection,
+                                  expanded: filterBarExpanded,
+                                  onToggle: () => setState(() =>
+                                      _filterBarExpandedOverride = !filterBarExpanded),
+                                ),
+                            ],
                           ),
                         ),
-                        // 当前分类声明了筛选时，分类条右侧给折叠开关（待办第 20 条）。
-                        if (currentFilters.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          CategoryFilterToggle(
-                            filters: currentFilters,
-                            selection: currentFilterSelection,
-                            expanded: filterBarExpanded,
-                            onToggle: () => setState(() =>
-                                _filterBarExpandedOverride = !filterBarExpanded),
-                          ),
-                        ],
                       ],
                     ),
                     // 筛选行固定在网格上方、不随网格滚动；无筛选或收起时整块不渲染。
