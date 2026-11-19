@@ -1,3 +1,4 @@
+import '../config/models/vod_config.dart';
 import 'models/vod_models.dart';
 
 /// 自动模式（配置里没写 `categories`）下要隐藏的分类名——**精确匹配**。
@@ -33,6 +34,9 @@ bool isAutoHiddenCategoryName(String name) {
 
 /// 自动模式下的分类过滤：只按上面的**精确名单**隐藏。
 ///
+/// **只对 CMS/JSON 站生效**：spider 站（csp jar / js / py / type=3）的分类是站点自己声明的，
+/// 用户 2026-11-19 明确要求「csp 不要过滤」，所以这里原样返回。
+///
 /// 空数据分类没法在本地判断（要真请求一次才知道），由 UI 层在探测到空结果后
 /// 追加隐藏，见 `_probeEmptyCategories`。
 List<VodCategory> filterAutoCategories(List<VodCategory> categories) {
@@ -42,4 +46,13 @@ List<VodCategory> filterAutoCategories(List<VodCategory> categories) {
       .toList(growable: false);
   // 全被隐藏了就退回原列表，别把分类条搞空。
   return List<VodCategory>.unmodifiable(kept.isEmpty ? categories : kept);
+}
+
+/// 按站点类型决定要不要过滤：**spider 站（csp jar / js / py）一律不过滤**。
+List<VodCategory> filterAutoCategoriesForSite(
+  Site site,
+  List<VodCategory> categories,
+) {
+  if (site.usesCompanion) return categories;
+  return filterAutoCategories(categories);
 }

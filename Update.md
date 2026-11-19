@@ -1,5 +1,19 @@
 ---
 
+## [1.12.5] - 2026-11-19
+
+### 修复：CSP（spider jar / js / py）站点的分类被误过滤
+
+- **问题**：1.12.x 的自动模式分类过滤对所有站点生效，spider 站（type=3 / csp_ / `.js` / `.py`）
+  的分类也被按名字隐藏了——这些分类是站点自己声明的，不该由我们删。
+- **改法**：新增 `filterAutoCategoriesForSite(site, categories)`：
+  `site.usesCompanion == true`（spider 站）**原样返回**，只有 CMS/JSON 站才走精确名单过滤。
+  app.dart 里改成调用这个入口。
+- **验证**：`flutter analyze` 无新增问题；`flutter test` **69 例全过**
+  （新增用例：csp jar 站、js 站不过滤；CMS 站照常过滤）；完整打包 + 34 项冒烟门禁通过。
+- **边界**：空分类探测本来就没对 spider 站做，这次两个方向就一致了——**spider 站完全不干预**。
+---
+
 ## [1.12.4] - 2026-11-19
 
 ### 自动模式隐藏名单补充：理论片 / 韩国伦理 / 西方伦理 / 日本伦理 / 电视剧 / 倫理片

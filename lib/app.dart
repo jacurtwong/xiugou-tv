@@ -4831,7 +4831,8 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
         var fetchedCats =
             orderCategoriesBySite(homeRes.categories, site.categories);
         if (_autoCategoriesMode) {
-          fetchedCats = filterAutoCategories(fetchedCats);
+          // spider 站（csp jar / js / py）的分类不过滤——用户 2026-11-19 明确要求。
+          fetchedCats = filterAutoCategoriesForSite(site, fetchedCats);
         }
 
         // ignore: avoid_print
