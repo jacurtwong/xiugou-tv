@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/api/cms_json_api.dart';
 import 'core/api/douban_repository.dart';
+import 'core/api/category_auto_filter.dart';
 import 'core/api/category_order.dart';
 import 'core/api/models/vod_models.dart';
 import 'core/diagnostics/error_log.dart';
@@ -4215,6 +4216,12 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
   /// 真正中止在途请求。结果是否采纳仍由 generation + 翻页键判定，令牌只负责释放资源。
   SearchCancelToken? _categoryCancelToken;
 
+  /// 当前站是否走「自动分类」（配置里没写 categories）。
+  bool _autoCategoriesMode = true;
+
+  /// 自动模式下探测到「有分类但没数据」的分类 id，从条上隐藏。
+  final Set<String> _emptyCategoryIds = <String>{};
+
   /// 豆瓣全分类数据池（用于仿 Netflix 首页各分类横滑画报流）
   final Map<String, List<VodItem>> _doubanCategoryItems = {};
 
@@ -4255,6 +4262,51 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
       mounted &&
       generation == _contentGeneration &&
       identity == _currentSiteIdentity();
+
+  /// 自动模式：逐个探测分类是否有数据，空的从分类条上摘掉（用户 2026-11-19 口径）。
+  ///
+  /// 只对 CMS 站做（spider 站每次都要过 JVM，几十个分类太贵），最多探 [maxProbe] 个、
+  /// 3 路并发；探测失败一律**不当空**，避免网络抖动把有内容的分类删掉。
+  Future<void> _probeEmptyCategories(
+      Site site, List<VodCategory> categories, int generation, String? identity,
+      {int maxProbe = 40}) async {
+    if (site.usesCompanion || categories.isEmpty) return;
+    final targets = categories
+        .where((cat) => cat.id.isNotEmpty && cat.id != _selectedCategory?.id)
+        .take(maxProbe)
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+    var cursor = 0;
+    Future<void> worker() async {
+      while (true) {
+        if (!_acceptContent(generation, identity)) return;
+        final index = cursor++;
+        if (index >= targets.length) return;
+        final cat = targets[index];
+        VodPageResult result;
+        try {
+          result = await ref.read(siteApiProvider).fetchCategory(
+            site,
+            categoryId: cat.id,
+            page: 1,
+            filter: false,
+          );
+        } catch (_) {
+          continue; // 探测失败不算空
+        }
+        if (!_acceptContent(generation, identity) || !mounted) return;
+        if (result.list.isNotEmpty || result.filters.isNotEmpty) continue;
+        _emptyCategoryIds.add(cat.id);
+        setState(() {
+          _categories = _categories
+              .where((c) => c.id != cat.id || c.id == _selectedCategory?.id)
+              .toList(growable: false);
+        });
+      }
+    }
+
+    await Future.wait([for (var i = 0; i < 3; i++) worker()]);
+  }
 
   /// 取消在途的增量搜索：停止接收后续批次，并**取消站源请求**（否则用户点叉
   /// 之后几十个站源仍会在后台跑完，纯属浪费——§18）。
@@ -4773,8 +4825,14 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
         final homeRes = await siteApi.fetchHome(site);
         if (!_acceptContent(generation, identity)) return;
         // 配置里若写了 categories，就按它的顺序排在前面；否则保持接口给的顺序。
-        final fetchedCats =
+        // 自动模式额外过滤体育 / 伦理类（用户 2026-11-19 口径）。
+        _autoCategoriesMode =
+            site.categories == null || site.categories!.isEmpty;
+        var fetchedCats =
             orderCategoriesBySite(homeRes.categories, site.categories);
+        if (_autoCategoriesMode) {
+          fetchedCats = filterAutoCategories(fetchedCats);
+        }
 
         // ignore: avoid_print
         print(
@@ -4790,6 +4848,12 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
             });
           }
 
+
+          // 自动模式：后台探测「有分类但没数据」的，探测完就从分类条上摘掉。
+          if (_autoCategoriesMode) {
+            unawaited(_probeEmptyCategories(
+                site, fetchedCats, generation, identity));
+          }
           // 默认加载站源第 1 个分类的数据
           if (firstCat.id.isNotEmpty) {
             // ignore: avoid_print
