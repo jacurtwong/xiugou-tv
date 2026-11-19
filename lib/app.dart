@@ -102,6 +102,7 @@ import 'ui/desktop/settings/settings_page.dart';
 import 'ui/desktop/shell/desktop_sidebar.dart';
 import 'ui/desktop/widgets/app_message.dart';
 import 'ui/desktop/widgets/desktop_window_frame.dart';
+import 'ui/desktop/widgets/collapsible_wrap.dart';
 import 'ui/desktop/widgets/dialog_drag_strip.dart';
 import 'ui/desktop/widgets/filter_pill.dart';
 import 'ui/desktop/widgets/home_search_bar_host.dart';
@@ -5831,11 +5832,8 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
                         Expanded(
                           // 分类按窗口宽度自动换行铺满：站点常有几十个分类，
                           // 横向滚动一屏看不全（用户 2026-11-19 口径）。
-                          child: Wrap(
+                          child: CollapsibleWrap(
                             key: const ValueKey('category-bar'),
-                            spacing: 8,
-                            runSpacing: 8,
-                            crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               if (_isDoubanHome && _doubanViewingSingleCategory)
                                 FilterPill(
