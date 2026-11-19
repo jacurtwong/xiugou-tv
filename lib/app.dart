@@ -102,9 +102,8 @@ import 'ui/desktop/settings/settings_page.dart';
 import 'ui/desktop/shell/desktop_sidebar.dart';
 import 'ui/desktop/widgets/app_message.dart';
 import 'ui/desktop/widgets/desktop_window_frame.dart';
-import 'ui/desktop/widgets/collapsible_wrap.dart';
+import 'ui/desktop/widgets/collapsible_pill_bar.dart';
 import 'ui/desktop/widgets/dialog_drag_strip.dart';
-import 'ui/desktop/widgets/filter_pill.dart';
 import 'ui/desktop/widgets/home_search_bar_host.dart';
 import 'ui/desktop/window/desktop_window_manager.dart';
 import 'ui/theme/app_palette.dart';
@@ -5830,15 +5829,15 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
                     Row(
                       children: [
                         Expanded(
-                          // 分类按窗口宽度自动换行铺满：站点常有几十个分类，
-                          // 横向滚动一屏看不全（用户 2026-11-19 口径）。
-                          child: CollapsibleWrap(
+                          // 分类横向铺满、按窗口宽度换行；默认最多两行，
+                          // 剩下的折叠成末行的「展开全部 N 个」虚线圈（用户 2026-11-19 口径）。
+                          child: CollapsiblePillBar(
                             key: const ValueKey('category-bar'),
-                            children: [
+                            items: [
                               if (_isDoubanHome && _doubanViewingSingleCategory)
-                                FilterPill(
+                                PillItem(
                                   label: '◀ 返回推荐大厅',
-                                  isSelected: false,
+                                  selected: false,
                                   onTap: () {
                                     setState(() {
                                       _doubanViewingSingleCategory = false;
@@ -5846,27 +5845,29 @@ class _DesktopMainViewState extends ConsumerState<DesktopMainView> {
                                   },
                                 ),
                               for (final cat in _categories)
-                                FilterPill(
+                                PillItem(
                                   label: cat.name,
-                                  isSelected: _selectedCategory?.id == cat.id,
+                                  selected: _selectedCategory?.id == cat.id,
                                   onTap: () {
                                     _searchController.clear();
                                     loadSiteData(
                                         category: cat, preserveCategories: true);
                                   },
                                 ),
-                              // 当前分类声明了筛选时，折叠开关跟在分类后面。
-                              if (currentFilters.isNotEmpty)
-                                CategoryFilterToggle(
-                                  filters: currentFilters,
-                                  selection: currentFilterSelection,
-                                  expanded: filterBarExpanded,
-                                  onToggle: () => setState(() =>
-                                      _filterBarExpandedOverride = !filterBarExpanded),
-                                ),
                             ],
                           ),
                         ),
+                        // 当前分类声明了筛选时，折叠开关固定在分类条右侧。
+                        if (currentFilters.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          CategoryFilterToggle(
+                            filters: currentFilters,
+                            selection: currentFilterSelection,
+                            expanded: filterBarExpanded,
+                            onToggle: () => setState(() =>
+                                _filterBarExpandedOverride = !filterBarExpanded),
+                          ),
+                        ],
                       ],
                     ),
                     // 筛选行固定在网格上方、不随网格滚动；无筛选或收起时整块不渲染。
